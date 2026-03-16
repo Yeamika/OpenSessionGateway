@@ -1,0 +1,17 @@
+{
+  "name": "opensessiongateway-workspace",
+  "private": true,
+  "workspaces": [
+    "protocllibrary",
+    "client-library",
+    "client-opencode-plugin-v2",
+    "client-template",
+    "server"
+  ],
+  "scripts": {
+    "build:protocol": "npm run build -w protocllibrary",
+    "build:client-library": "npm run build -w @opensessiongateway/client-library",
+    "build:plugin": "npm run build -w opencode-hook-client-v2",
+    "build:server": "npm run build -w server"
+  }
+}

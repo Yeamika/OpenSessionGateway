@@ -1,0 +1,50 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum ClientStatus {
+  online
+  stale
+  offline
+}
+
+enum EventType {
+  register
+  heartbeat
+  update
+  offline
+}
+
+model Client {
+  uuid            String       @id
+  hostname        String?
+  port            Int?
+  workspace       String?
+  title           String?
+  status          ClientStatus @default(online)
+  pid             Int?
+  opencodeVersion String?
+  lastHeartbeatAt DateTime?
+  lastSeenAt      DateTime?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  events          ClientEvent[]
+
+  @@index([status, lastHeartbeatAt])
+  @@index([updatedAt])
+}
+
+model ClientEvent {
+  id         Int       @id @default(autoincrement())
+  clientUuid String
+  type       EventType
+  payload    Json?
+  createdAt  DateTime  @default(now())
+  client     Client    @relation(fields: [clientUuid], references: [uuid], onDelete: Cascade)
+
+  @@index([clientUuid, createdAt])
+}
