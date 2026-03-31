@@ -1,0 +1,10 @@
+{
+  "name": "@opensessiongateway/agent-opencode-test",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "node run.mjs typecheck",
+    "test": "node run.mjs test",
+    "build": "node run.mjs build"
+  }
+}

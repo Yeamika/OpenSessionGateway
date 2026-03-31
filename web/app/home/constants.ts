@@ -1,0 +1,13 @@
+export const BUILD_STAMP = "build-20260322-04";
+export const SPIN = ["⣽", "⣾", "⣷", "⣯", "⣟", "⡿", "⢿", "⣻"] as const;
+export const CARD_W = 320;
+export const CARD_H = 180;
+export const MINI_CARD_W = 140;
+export const MINI_CARD_H = 100;
+export const CARD_MARGIN = 14;
+export const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
+export const WORKSPACE_LABEL_W = 220;
+export const WORKSPACE_MARGIN_X = 28;
+export const WORKSPACE_MARGIN_Y = 90;
+export const WORLD_MIN_W = 2200;
+export const WORLD_MIN_H = 1400;

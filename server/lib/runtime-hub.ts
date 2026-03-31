@@ -1,17 +1,24 @@
-import { ensureRuntimeBundle, getRuntimeBundle } from "@/lib/ClientModel/bundle/registry";
+import { ensureRuntimeBundle, getRuntimeBundle } from "@/lib/ClientModel/registry";
 
-export type { RuntimeBundle } from "@/lib/ClientModel/bundle/model";
-export type { RuntimeMailboxRow, RuntimeMailboxReminder } from "@/lib/ClientModel/mailbox/model";
-export type { RuntimeTimerRow } from "@/lib/ClientModel/timer/model";
+export type { RuntimeBundle } from "@/lib/ClientModel/model";
 
 export {
   bindCallerToRuntime,
   ensureRuntimeBundle,
   getRuntimeBundle,
   isRuntimeOnlineInHub,
+  listRuntimeBundles,
+  markRuntimeBundleDisconnected,
   removeRuntimeBundle,
   resolveRuntimeByCaller,
-} from "@/lib/ClientModel/bundle/registry";
+} from "@/lib/ClientModel/registry";
+
+export { ensureRuntimeSessionBundle, getRuntimeSessionBundle } from "@/lib/ClientModel/session/registry";
+
+export {
+  ensureRuntimeInstanceWorkspaceBundle,
+  getRuntimeInstanceWorkspaceBundle,
+} from "@/lib/ClientModel/instance-workspace/registry";
 
 export function setRuntimeWsBridge(runtimeID: string, hostName: string): void {
   const bundle = ensureRuntimeBundle(runtimeID);

@@ -5,7 +5,12 @@ coverage/
 .next/
 *.log
 .DS_Store
+tmp/
 .env
 .env.*
 !.env.example
 *.tsbuildinfo
+agents/**/.runtime/
+agents/**/.archive/
+agents/**/vendor/
+agents/**/node_modules/

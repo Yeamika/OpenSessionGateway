@@ -1,0 +1,26 @@
+{
+  "name": "@opensessiongateway/client-library",
+  "version": "0.0.1",
+  "description": "Unified OSGClient with logger and WebSocket support",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "clean": "rm -rf dist"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.10",
+    "typescript": "^5.8.2"
+  },
+  "dependencies": {
+    "@opensessiongateway/protocol-library": "0.0.1"
+  },
+  "license": "MIT"
+}

@@ -11,9 +11,5 @@ export function resolveStatus(lastHeartbeatAt: Date | null): ClientStatus {
     return "online";
   }
 
-  if (elapsedSec <= 120) {
-    return "stale";
-  }
-
   return "offline";
 }

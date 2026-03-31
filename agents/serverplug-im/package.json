@@ -1,0 +1,11 @@
+{
+  "name": "@opensessiongateway/agent-serverplug-im",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node run.mjs dev",
+    "build": "node run.mjs build",
+    "lint": "node run.mjs lint",
+    "probe": "node run.mjs probe"
+  }
+}

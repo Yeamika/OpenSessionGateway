@@ -1,0 +1,12 @@
+{
+  "name": "@opensessiongateway/agent-opencode-plug",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node run.mjs build",
+    "build:library": "node run.mjs build-library",
+    "build:plugin": "node run.mjs build-plugin",
+    "build:template": "node run.mjs build-template",
+    "fleet": "node run.mjs fleet"
+  }
+}

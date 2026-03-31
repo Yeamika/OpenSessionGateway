@@ -1,0 +1,57 @@
+{
+  "mode": "replace",
+  "calls": [
+    {
+      "surface": "runtime_control",
+      "method": "tools/list"
+    },
+    {
+      "surface": "runtime_control",
+      "method": "tools/call",
+      "tool": "ListClients",
+      "arguments": {
+        "list": 100
+      },
+      "repeat": 3
+    },
+    {
+      "surface": "runtime_control",
+      "method": "tools/call",
+      "tool": "CreateNewSession",
+      "arguments": {
+        "runtimeID": "${runtimeID}",
+        "instanceWorkspaceDirectory": "${cwd}",
+        "content": "scenario-created session",
+        "title": "Scenario Session"
+      }
+    },
+    {
+      "surface": "session_bridge",
+      "method": "initialize",
+      "params": {
+        "runtimeID": "${runtimeID}"
+      }
+    },
+    {
+      "surface": "runtime_control",
+      "method": "tools/call",
+      "tool": "AddPrompt",
+      "arguments": {
+        "runtimeID": "${runtimeID}",
+        "sessionID": "${createdSessionID}",
+        "msg": "scenario message",
+        "role": "user"
+      }
+    },
+    {
+      "surface": "session_bridge",
+      "method": "tools/call",
+      "tool": "GetSessionMessages",
+      "arguments": {
+        "runtimeID": "${runtimeID}",
+        "sessionID": "${createdSessionID}",
+        "size": 20
+      }
+    }
+  ]
+}

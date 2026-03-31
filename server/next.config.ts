@@ -4,7 +4,7 @@ const nextConfig: NextConfig = {
   experimental: {
     externalDir: true,
   },
-  transpilePackages: ["protocllibrary"],
+  transpilePackages: ["@opensessiongateway/protocol-library"],
 };
 
 export default nextConfig;

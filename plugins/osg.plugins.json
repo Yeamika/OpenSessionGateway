@@ -1,0 +1,12 @@
+{
+  "autoload": {
+    "allow": [
+      "IM-gateway",
+      "runtime-control",
+      "timer-scheduler"
+    ],
+    "deny": [
+      "session-bridge"
+    ]
+  }
+}

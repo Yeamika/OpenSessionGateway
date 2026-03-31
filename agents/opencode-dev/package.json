@@ -1,0 +1,11 @@
+{
+  "name": "@opensessiongateway/agent-opencode-dev",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node run.mjs build",
+    "typecheck": "node run.mjs typecheck",
+    "test": "node run.mjs test",
+    "serve": "node run.mjs serve"
+  }
+}

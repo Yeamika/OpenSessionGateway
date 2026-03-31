@@ -1,0 +1,12 @@
+{
+  "name": "@opensessiongateway/osg-plugin-timer-scheduler",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@opensessiongateway/server-plugin-sdk": "0.0.1"
+  },
+  "osgServerPlugin": {
+    "entry": "./index.ts"
+  }
+}

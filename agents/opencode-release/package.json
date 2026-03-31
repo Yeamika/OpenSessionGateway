@@ -1,0 +1,10 @@
+{
+  "name": "@opensessiongateway/agent-opencode-release",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build-cli": "node run.mjs build-cli",
+    "build-local-cli": "node run.mjs build-local-cli",
+    "publish-script": "node run.mjs publish-script"
+  }
+}

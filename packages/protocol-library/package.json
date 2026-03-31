@@ -1,0 +1,112 @@
+{
+  "name": "@opensessiongateway/protocol-library",
+  "version": "0.0.1",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "typesVersions": {
+    "*": {
+      "ws-protocol/AbortSessionOfClient.js": ["dist/ws-protocol/AbortSessionOfClient.d.ts"],
+      "ws-protocol/AddPromot.js": ["dist/ws-protocol/AddPromot.d.ts"],
+      "ws-protocol/ClientContentExecuteing.js": ["dist/ws-protocol/ClientContentExecuteing.d.ts"],
+      "ws-protocol/CreateNewSession.js": ["dist/ws-protocol/CreateNewSession.d.ts"],
+      "ws-protocol/CurrentClient.js": ["dist/ws-protocol/CurrentClient.d.ts"],
+      "ws-protocol/GetSessionMsg.js": ["dist/ws-protocol/GetSessionMsg.d.ts"],
+      "ws-protocol/ListAvailableModels.js": ["dist/ws-protocol/ListAvailableModels.d.ts"],
+      "ws-protocol/ListLastUsedModelOfSession.js": ["dist/ws-protocol/ListLastUsedModelOfSession.d.ts"],
+      "ws-protocol/RenameSessionOfClient.js": ["dist/ws-protocol/RenameSessionOfClient.d.ts"],
+      "ws-protocol/SetClientDisplaySession.js": ["dist/ws-protocol/SetClientDisplaySession.d.ts"],
+      "ws-protocol/ShowToast.js": ["dist/ws-protocol/ShowToast.d.ts"],
+      "ws-protocol/SessionList.js": ["dist/ws-protocol/SessionList.d.ts"],
+      "ws-protocol/Permission.js": ["dist/ws-protocol/Permission.d.ts"],
+      "ws-protocol/RequestRuntime.js": ["dist/ws-protocol/RequestRuntime.d.ts"],
+      "ws-basic/Connected.js": ["dist/ws-basic/Connected.d.ts"],
+      "ws-basic/Error.js": ["dist/ws-basic/Error.d.ts"],
+      "ws-basic/Ping.js": ["dist/ws-basic/Ping.d.ts"]
+    }
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./ws-protocol/AbortSessionOfClient.js": {
+      "types": "./dist/ws-protocol/AbortSessionOfClient.d.ts",
+      "default": "./dist/ws-protocol/AbortSessionOfClient.js"
+    },
+    "./ws-protocol/AddPromot.js": {
+      "types": "./dist/ws-protocol/AddPromot.d.ts",
+      "default": "./dist/ws-protocol/AddPromot.js"
+    },
+    "./ws-protocol/ClientContentExecuteing.js": {
+      "types": "./dist/ws-protocol/ClientContentExecuteing.d.ts",
+      "default": "./dist/ws-protocol/ClientContentExecuteing.js"
+    },
+    "./ws-protocol/CreateNewSession.js": {
+      "types": "./dist/ws-protocol/CreateNewSession.d.ts",
+      "default": "./dist/ws-protocol/CreateNewSession.js"
+    },
+    "./ws-protocol/CurrentClient.js": {
+      "types": "./dist/ws-protocol/CurrentClient.d.ts",
+      "default": "./dist/ws-protocol/CurrentClient.js"
+    },
+    "./ws-protocol/GetSessionMsg.js": {
+      "types": "./dist/ws-protocol/GetSessionMsg.d.ts",
+      "default": "./dist/ws-protocol/GetSessionMsg.js"
+    },
+    "./ws-protocol/ListAvailableModels.js": {
+      "types": "./dist/ws-protocol/ListAvailableModels.d.ts",
+      "default": "./dist/ws-protocol/ListAvailableModels.js"
+    },
+    "./ws-protocol/ListLastUsedModelOfSession.js": {
+      "types": "./dist/ws-protocol/ListLastUsedModelOfSession.d.ts",
+      "default": "./dist/ws-protocol/ListLastUsedModelOfSession.js"
+    },
+    "./ws-protocol/RenameSessionOfClient.js": {
+      "types": "./dist/ws-protocol/RenameSessionOfClient.d.ts",
+      "default": "./dist/ws-protocol/RenameSessionOfClient.js"
+    },
+    "./ws-protocol/SetClientDisplaySession.js": {
+      "types": "./dist/ws-protocol/SetClientDisplaySession.d.ts",
+      "default": "./dist/ws-protocol/SetClientDisplaySession.js"
+    },
+    "./ws-protocol/ShowToast.js": {
+      "types": "./dist/ws-protocol/ShowToast.d.ts",
+      "default": "./dist/ws-protocol/ShowToast.js"
+    },
+    "./ws-protocol/SessionList.js": {
+      "types": "./dist/ws-protocol/SessionList.d.ts",
+      "default": "./dist/ws-protocol/SessionList.js"
+    },
+    "./ws-protocol/Permission.js": {
+      "types": "./dist/ws-protocol/Permission.d.ts",
+      "default": "./dist/ws-protocol/Permission.js"
+    },
+    "./ws-protocol/RequestRuntime.js": {
+      "types": "./dist/ws-protocol/RequestRuntime.d.ts",
+      "default": "./dist/ws-protocol/RequestRuntime.js"
+    },
+    "./ws-basic/Connected.js": {
+      "types": "./dist/ws-basic/Connected.d.ts",
+      "default": "./dist/ws-basic/Connected.js"
+    },
+    "./ws-basic/Error.js": {
+      "types": "./dist/ws-basic/Error.d.ts",
+      "default": "./dist/ws-basic/Error.js"
+    },
+    "./ws-basic/Ping.js": {
+      "types": "./dist/ws-basic/Ping.d.ts",
+      "default": "./dist/ws-basic/Ping.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "clean": "rm -rf dist"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.2"
+  }
+}
