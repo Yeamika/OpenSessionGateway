@@ -17,29 +17,30 @@ export const REPLY_MAILBOX_ITEM_TOOL = {
   },
 };
 
-function currentCallerClient(
+function findRuntimeSessionClient(
   runtimeID: string,
+  sessionID: string,
   clients: Array<{ runtimeID: string; sessionID: string | null; title: string | null }>,
 ) {
-  return clients.find((item) => item.runtimeID === runtimeID) || null;
+  return clients.find((item) => item.runtimeID === runtimeID && item.sessionID === sessionID) || null;
 }
 
 export function createReplyMailboxItemToolHandler(services: SessionBridgeServices) {
-  return async function handleReplyMailboxItemTool(toolArgs: Record<string, unknown>, callerRuntimeID: string) {
-    const sessionID = normalizeStringArg(toolArgs.ExecutorSessionID);
+  return async function handleReplyMailboxItemTool(toolArgs: Record<string, unknown>, executorRuntimeID: string) {
+    const executorSessionID = normalizeStringArg(toolArgs.ExecutorSessionID);
     const replayID = normalizeStringArg(toolArgs.replayID);
     const msg = normalizeStringArg(toolArgs.msg);
     const clients = await services.osg.listRuntimeClients();
-    const sender = currentCallerClient(callerRuntimeID, clients);
-    if (!sender) throw new Error("caller runtime not found");
+    const sender = findRuntimeSessionClient(executorRuntimeID, executorSessionID, clients);
+    if (!sender) throw new Error("executor runtime/session not found");
 
     return replayMailboxItem({
       services,
-      runtimeID: callerRuntimeID,
-      sessionID,
+      runtimeID: executorRuntimeID,
+      sessionID: executorSessionID,
       replayID,
       message: msg,
-      senderSessionID: sender.sessionID || "",
+      senderSessionID: executorSessionID,
       senderSessionTitle: sender.title || "",
     });
   };

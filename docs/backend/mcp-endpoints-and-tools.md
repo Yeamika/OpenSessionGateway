@@ -123,10 +123,7 @@ Current tool list in code:
 ### Runtime Binding Requirement
 
 Unlike `runtime_control`, `session_bridge` requires a runtime binding.
-A runtime can be resolved in one of two ways:
-
-1. by passing `runtimeID` in the request query string,
-2. or by relying on a caller-to-runtime binding created during `initialize`.
+A runtime must be resolved by passing `runtimeID` in the request query string.
 
 The endpoint validates that the selected runtime is online.
 If the runtime is missing or offline, the request is rejected.
@@ -137,6 +134,7 @@ This endpoint is effectively the live interaction plane for session content and 
 It is used by the Feishu bridge to:
 
 - fetch recent session messages.
+- mailbox tools that operate on the current executor session now use `ExecutorSessionID` instead of guessing sender/session context from caller identity.
 
 ## timer_scheduler
 

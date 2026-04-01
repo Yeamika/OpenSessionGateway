@@ -1,13 +1,5 @@
 import type { NextRequest } from "next/server.js";
 
-export function callerKey(req: NextRequest): string {
-  const forwarded = req.headers.get("x-forwarded-for")?.trim();
-  if (forwarded) return `xff:${forwarded}`;
-  const realIp = req.headers.get("x-real-ip")?.trim();
-  if (realIp) return `xri:${realIp}`;
-  return "";
-}
-
 export function normalizeInitParams(payload: unknown, req: NextRequest): { runtimeID: string } {
   const obj = payload && typeof payload === "object" ? (payload as Record<string, unknown>) : {};
   const runtimeIDRaw =
