@@ -1,7 +1,7 @@
 import type { OsgServerPlugin } from "@opensessiongateway/server-plugin-sdk";
 
-import { createRuntimeControlMcpPlugin } from "./surface.ts";
-import { createRuntimeControlServices } from "./types.ts";
+import { createRuntimeControlMcpPlugin } from "./surface.js";
+import { createRuntimeControlServices } from "./types.js";
 
 const runtimeControlPlugin: OsgServerPlugin = {
   manifest: {

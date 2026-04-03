@@ -19,29 +19,42 @@ const ensure = [
   path.join(gatewayRuntimeDir, "logs"),
 ];
 
+async function runPackage(relativeDir, args, extra = {}) {
+  await runNpm({
+    cwd: path.join(repoRoot, relativeDir),
+    args,
+    ensure,
+    ...extra,
+  });
+}
+
 switch (mode) {
   case "build-sdk":
-    await runNpm({
-      cwd: path.join(repoRoot, "packages", "server-plugin-sdk"),
-      args: ["run", "build"],
-      ensure,
-    });
+    await runPackage(path.join("packages", "server-plugin-sdk"), ["run", "build"]);
+    break;
+  case "build-runtime-control":
+    await runPackage(path.join("plugins", "runtime-control"), ["run", "build"]);
+    break;
+  case "build-session-bridge":
+    await runPackage(path.join("plugins", "session-bridge"), ["run", "build"]);
+    break;
+  case "build-timer-scheduler":
+    await runPackage(path.join("plugins", "timer-scheduler"), ["run", "build"]);
+    break;
+  case "build":
+    await runPackage(path.join("packages", "server-plugin-sdk"), ["run", "build"]);
+    await runPackage(path.join("plugins", "runtime-control"), ["run", "build"]);
+    await runPackage(path.join("plugins", "session-bridge"), ["run", "build"]);
+    await runPackage(path.join("plugins", "timer-scheduler"), ["run", "build"]);
     break;
   case "dev":
-  case "build":
   case "lint": {
     const command = {
       dev: ["run", "dev"],
-      build: ["run", "build"],
       lint: ["run", "lint"],
     }[mode];
 
-    await runNpm({
-      cwd: path.join(repoRoot, "server"),
-      args: command,
-      env,
-      ensure,
-    });
+    await runPackage("server", command, { env });
     break;
   }
   default:

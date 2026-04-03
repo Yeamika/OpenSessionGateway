@@ -11,7 +11,8 @@
     "start": "npm run build && npm run start:ws",
     "start:ws": "cross-env NODE_ENV=production tsx scripts/run-with-repo-plugins.ts",
     "start:next": "next start -p 4088",
-    "lint": "eslint"
+    "lint": "eslint",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.4.2",

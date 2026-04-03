@@ -2,8 +2,8 @@ import { NextResponse } from "next/server.js";
 
 import type { PluginContext, McpPlugin } from "@opensessiongateway/server-plugin-sdk";
 
-import { createCronTimer, createOneShotTimer, createPeriodicTimer, deleteRuntimeTimer, listAllTimers, listTimers } from "./scheduler.ts";
-import { errorResult, normalizeString, parseRpc, positiveInt, successResult, textResult } from "./common.ts";
+import { createCronTimer, createOneShotTimer, createPeriodicTimer, deleteRuntimeTimer, listAllTimers, listTimers } from "./scheduler.js";
+import { errorResult, normalizeString, parseRpc, positiveInt, successResult, textResult } from "./common.js";
 
 const SELF_TOOLS = [
   {

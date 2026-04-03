@@ -12,8 +12,8 @@ import type {
   GatewaySessionBinding,
   GatewayState,
   GatewayUpload,
-} from "./types.ts";
-import { accountKeyOf } from "./types.ts";
+} from "./types.js";
+import { accountKeyOf } from "./types.js";
 
 const EMPTY_STATE: GatewayState = {
   accounts: {},
@@ -242,13 +242,14 @@ function normalizeRouteStatus(value: unknown, fallbackRouteID = ""): GatewayRout
   if (!isObject(value)) return null;
   const routeID = asString(value.routeID) || fallbackRouteID;
   const label = asString(value.label);
-  if (!routeID || (label !== "idle" && label !== "busy" && label !== "error")) return null;
+  if (!routeID || (label !== "idle" && label !== "busy" && label !== "error" && label !== "offline" && label !== "missing_session")) return null;
   return {
     routeID,
     label,
     targetMessageID: asString(value.targetMessageID),
     reactionID: asString(value.reactionID),
     reactionEmojiType: asString(value.reactionEmojiType),
+    detail: asString(value.detail),
     updatedAt: asString(value.updatedAt) || new Date().toISOString(),
   };
 }

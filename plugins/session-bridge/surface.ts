@@ -4,14 +4,14 @@ import { NextResponse } from "next/server.js";
 import type { McpPlugin } from "@opensessiongateway/server-plugin-sdk";
 import { errorResult, parseRpc, successResult } from "@opensessiongateway/server-plugin-sdk";
 
-import { callerKey, normalizeInitParams, runtimeIDFromQuery, textResult } from "./common.ts";
-import type { SessionBridgeServices } from "./types.ts";
-import { GET_SESSION_MESSAGES_TOOL, createGetSessionMessagesToolHandler } from "./tools/GetSessionMessages.ts";
-import { LIST_LIVING_SESSIONS_TOOL, createListLivingSessionsToolHandler } from "./tools/ListLivingSessions.ts";
-import { LIST_MAILBOX_ITEMS_TOOL, createListMailboxItemsToolHandler } from "./tools/ListMailboxItems.ts";
-import { READ_MAILBOX_ITEM_TOOL, createReadMailboxItemToolHandler } from "./tools/ReadMailboxItem.ts";
-import { REPLY_MAILBOX_ITEM_TOOL, createReplyMailboxItemToolHandler } from "./tools/ReplyMailboxItem.ts";
-import { SEND_MAILBOX_ITEM_TOOL, createSendMailboxItemToolHandler } from "./tools/SendMailboxItem.ts";
+import { normalizeInitParams, runtimeIDFromQuery, textResult } from "./common.js";
+import type { SessionBridgeServices } from "./types.js";
+import { GET_SESSION_MESSAGES_TOOL, createGetSessionMessagesToolHandler } from "./tools/GetSessionMessages.js";
+import { LIST_LIVING_SESSIONS_TOOL, createListLivingSessionsToolHandler } from "./tools/ListLivingSessions.js";
+import { LIST_MAILBOX_ITEMS_TOOL, createListMailboxItemsToolHandler } from "./tools/ListMailboxItems.js";
+import { READ_MAILBOX_ITEM_TOOL, createReadMailboxItemToolHandler } from "./tools/ReadMailboxItem.js";
+import { REPLY_MAILBOX_ITEM_TOOL, createReplyMailboxItemToolHandler } from "./tools/ReplyMailboxItem.js";
+import { SEND_MAILBOX_ITEM_TOOL, createSendMailboxItemToolHandler } from "./tools/SendMailboxItem.js";
 
 const SESSION_BRIDGE_TOOLS = [
   LIST_LIVING_SESSIONS_TOOL,
@@ -48,11 +48,6 @@ export function createSessionBridgeMcpPlugin(services: SessionBridgeServices): M
         return NextResponse.json(errorResult(id, -32002, "runtimeID is not connected via ws"));
       }
 
-      const key = callerKey(req);
-      if (key && initRuntimeID) {
-        await services.osg.bindCallerToRuntime(key, initRuntimeID);
-      }
-
       return NextResponse.json(
         successResult(id, {
           protocolVersion: "2025-03-26",
@@ -76,7 +71,7 @@ export function createSessionBridgeMcpPlugin(services: SessionBridgeServices): M
     }
 
     if (method === "tools/call") {
-      const runtimeID = runtimeIDFromQuery(req) || await services.osg.resolveRuntimeByCaller(callerKey(req));
+      const runtimeID = runtimeIDFromQuery(req);
       if (!runtimeID) {
         return NextResponse.json(errorResult(id, -32001, "runtimeID required in query"));
       }

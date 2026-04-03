@@ -13,16 +13,31 @@
     "@koishijs/core": "^4.18.11",
     "@koishijs/plugin-adapter-lark": "^3.12.4",
     "@larksuiteoapi/node-sdk": "^1.60.0",
-    "@opensessiongateway/server-plugin-sdk": "0.0.1",
+    "@opensessiongateway/server-plugin-sdk": "0.0.2",
     "koishi": "^4.18.11"
   },
   "scripts": {
-    "build:all": "npm --prefix agents/opencode-plug run build && npm --prefix agents/serverplug-core run build:sdk && npm --prefix agents/server run build && npm --prefix agents/web run build",
-    "build:protocol": "npm --prefix agents/opencode-plug run build:library",
-    "build:client-library": "npm --prefix agents/opencode-plug run build:library",
-    "build:server-plugin-sdk": "npm --prefix agents/serverplug-core run build:sdk",
-    "build:plugin": "npm --prefix agents/opencode-plug run build:plugin",
+    "build": "npm run build:server && npm run build:web && npm run build:opencode && npm run build:plugins",
+    "build:all": "npm run build",
     "build:server": "npm --prefix agents/server run build",
-    "build:web": "npm --prefix agents/web run build"
+    "build:web": "npm --prefix agents/web run build",
+    "build:opencode": "npm --prefix agents/opencode-plug run build",
+    "build:opencode:library": "npm --prefix agents/opencode-plug run build:library",
+    "build:opencode:plugin": "npm --prefix agents/opencode-plug run build:plugin",
+    "build:opencode:template": "npm --prefix agents/opencode-plug run build:template",
+    "build:plugins": "npm run build:plugins:sdk && npm run build:plugin:runtime-control && npm run build:plugin:session-bridge && npm run build:plugin:timer-scheduler && npm run build:plugin:im-gateway",
+    "build:plugins:sdk": "npm --prefix packages/server-plugin-sdk run build",
+    "build:plugin:runtime-control": "npm --prefix plugins/runtime-control run build",
+    "build:plugin:session-bridge": "npm --prefix plugins/session-bridge run build",
+    "build:plugin:timer-scheduler": "npm --prefix plugins/timer-scheduler run build",
+    "build:plugin:im-gateway": "npm --prefix plugins/IM-gateway run build",
+    "lint": "npm run lint:server && npm run lint:web",
+    "lint:server": "npm --prefix server run lint",
+    "lint:web": "npm --prefix web run lint",
+    "typecheck": "npm run typecheck:packages && npm run typecheck:server && npm run typecheck:web && npm run typecheck:plugins",
+    "typecheck:packages": "npm --prefix packages/protocol-library run typecheck && npm --prefix packages/client-library run typecheck && npm --prefix packages/client-opencode-plugin-v2 run typecheck && npm --prefix packages/client-template run typecheck && npm --prefix packages/server-plugin-sdk run typecheck",
+    "typecheck:server": "npm --prefix server run typecheck",
+    "typecheck:web": "npm --prefix web run typecheck",
+    "typecheck:plugins": "npm --prefix plugins/runtime-control run typecheck && npm --prefix plugins/session-bridge run typecheck && npm --prefix plugins/timer-scheduler run typecheck && npm --prefix plugins/IM-gateway run typecheck"
   }
 }

@@ -2,8 +2,8 @@ import { randomUUID } from "node:crypto";
 
 import type { PluginContext } from "@opensessiongateway/server-plugin-sdk";
 
-import type { TimerRow } from "./common.ts";
-import { normalizeString, normalizeTimerType, view, wrapTimer } from "./common.ts";
+import type { TimerRow } from "./common.js";
+import { normalizeString, normalizeTimerType, view, wrapTimer } from "./common.js";
 
 const TIMER_PREFIX = "timer-scheduler:timer:";
 const RETRY_DELAY_MS = 30_000;

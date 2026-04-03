@@ -6,7 +6,8 @@
     "dev": "next dev -p 4089",
     "build": "next build",
     "start": "next start -p 4089",
-    "lint": "eslint"
+    "lint": "eslint",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
     "lucide-react": "^0.577.0",

@@ -1,6 +1,6 @@
 {
   "name": "@opensessiongateway/server-plugin-sdk",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Shared SDK for OSG server-side plugins",
   "type": "module",
   "main": "dist/index.js",
@@ -16,6 +16,7 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
     "clean": "rm -rf dist"
   },
   "devDependencies": {
