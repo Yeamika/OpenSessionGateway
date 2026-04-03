@@ -3,10 +3,11 @@
     "allow": [
       "IM-gateway",
       "runtime-control",
+      "session-bridge",
       "timer-scheduler"
     ],
     "deny": [
-      "session-bridge"
+      "MemoryLibrary"
     ]
   }
 }

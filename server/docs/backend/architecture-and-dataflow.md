@@ -9,25 +9,25 @@ The live view is built from the active WS queue plus cached runtime bundles. Con
 
 ## Follow connect
 
-A new runtime connection creates a queue, stamps `connectedAt`, and sets `lastSeenAt` to the same time. Duplicate live connections for the same `runtimeID` are rejected, while inactive old queues are cleaned before a replacement connects.
+A new runtime connection creates a queue, updates the runtime WS bridge, emits `runtime_connect`, and then sends the `connected` ack. Duplicate live connections for the same `runtimeID` are rejected, while inactive old queues are cleaned before a replacement connects.
 
 ---
 
 ## Track events
 
-Every remembered WS event updates `lastActiveAt` on the queue and touches runtime `lastSeenAt`. `CLIENT_CONTENT_EXECUTEING` is the main session activity source, while `RequestCurrentInfo` remains a compatibility fallback.
+Every remembered WS event updates `lastActiveAt` on the queue and touches runtime `lastSeenAt`. The queue also caches `lastClientContentExecuteing` and `lastSessionList`. `CLIENT_CONTENT_EXECUTEING` is the main session activity source.
 
 ---
 
 ## Describe rows
 
-If a runtime has tracked sessions, the live list emits one row per session. Offline runtimes can still appear from cached bundles, and runtimes without sessions fall back to a single row built from the latest snapshot.
+If a runtime has tracked sessions, the live list emits one row per session. Online rows reuse the queue's latest `instanceWorkspaceDirectory` snapshot. Offline runtimes can still appear from cached bundles, but their `instanceWorkspaceDirectory` field may be empty because the queue is gone.
 
 ---
 
 ## Describe ordering
 
-Runtime rows sort `online` before `offline`. After that, higher `activeCount` and newer `lastActiveTime` win before tie-breakers like `updatedAt`, `runtimeID`, `workspace`, `displayID`, `title`, and `sessionID`.
+Runtime rows sort `online` before `offline`. After that, higher `activeCount` and newer `lastActiveTime` win before tie-breakers like `updatedAt`, `runtimeID`, `instanceWorkspaceDirectory`, `displayID`, `title`, and `sessionID`.
 
 ---
 

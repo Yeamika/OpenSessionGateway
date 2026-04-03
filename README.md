@@ -4,45 +4,45 @@ Workspace for the OpenSessionGateway project.
 
 ## Layout
 
-- `agents/`: isolated agent workspaces, runtime state, and non-code support assets; keep agent coordination here, not in product code roots
-- `web/`: Next.js frontend for the monitor/admin UI
-- `server/`: Next.js + WebSocket gateway server
+- `agents/`: isolated run wrappers, runtime state, and shared OpenCode config
+- `docs/`: project, backend, frontend, plugin, and maintenance notes
+- `web/`: main interactive monitor/admin UI
+- `server/`: gateway APIs, WebSocket runtime port, monitor SSE, and local plugin admin server
 - `packages/protocol-library/`: shared WS protocol contracts
 - `packages/client-library/`: reusable OSG runtime client
-- `packages/client-opencode-plugin-v2/`: OpenCode-facing OSG plugin package
-- `packages/client-template/`: example/test client package
+- `packages/client-opencode-plugin-v2/`: OpenCode-facing OSG client integration
+- `packages/client-template/`: example and smoke-test client
 - `packages/server-plugin-sdk/`: reusable SDK for server-side plugins
-- `plugins/`: canonical repo-shipped OSG server plugins
+- `plugins/`: canonical repo-shipped OSG server plugins such as `runtime-control`, `session-bridge`, `timer-scheduler`, and `IM-gateway`
 - `server/local-plugins/`: local override plugin root for ad-hoc packages
 
-Agent-owned non-code areas now live under `agents/`, for example:
+Agent-owned non-code areas live under `agents/`, for example:
 
-- `agents/server/.runtime/`: gateway locks, logs, heap dumps, and live runtime state
-- `agents/opencode-plug/.runtime/`: OpenCode/client runtime logs and fleet workspaces
-- `agents/serverplug-im/.runtime/`: IM bridge state and bridge workspaces
+- `agents/server/.runtime/`: gateway locks, logs, heap dumps, and startup/runtime support files
+- `agents/opencode-plug/.runtime/`: OpenCode runtime logs and client-template fleet workspaces
+- `agents/serverplug-im/.runtime/`: IM gateway state, uploads, and provider workspaces
 - `agents/server/.archive/`: historical backup material
 - `agents/serverplug-im/vendor/`: third-party IM adapter source snapshots and tarballs
 
 ## Documentation
 
-See `docs/README.md` for the current working architecture and maintenance notes.
+See `docs/README.md` for the working architecture notes and `server/README.md` for the current gateway runtime surface.
 
 ## Build Notes
 
 - Recommended flow:
   - Run `npm install` at the workspace root once to populate the shared `node_modules/` for the whole repo.
-  - Run runtime, dev, lint, and build commands from the relevant `agents/*` directory, not from code roots.
-  - If you want a root shortcut, the root `build:*` scripts now delegate into `agents/*` wrappers instead of calling code workspaces directly.
-- UI now lives in `web/`, while the runtime gateway and API surface stay in `server/`.
-- Use the local npm registry on `desktop-phi` when installing workspace dependencies. If install logs show requests going to `mechrevo:4873`, check `C:\Users\yes\.npmrc` and update `registry=http://desktop-phi:4873/`.
+  - Use the `agents/*` wrappers for normal dev, build, and lint flows.
+  - Use the code workspaces directly when you need package-local commands or implementation inspection.
+- `web/` owns the main UI. `server/` owns the gateway APIs, WS runtime port, SSE monitor stream, and plugin admin server.
 - `packages/client-opencode-plugin-v2/` depends on private `@opencode-ai` packages. Those packages must already exist in the local registry before running `npm install`.
-- `server/` still generates Prisma client during gateway builds. Use `agents/server/` for normal gateway runs.
+- `server/` still generates a Prisma client during gateway builds even though current live runtime state is mostly in-memory.
 - If dependency install behavior looks stale or still points at an old local tarball path, regenerate `package-lock.json` from the current registry before retrying `npm install`.
 
 ### Agent Entry Points
 
-- `agents/web/` -> `npm run dev|build|lint`
-- `agents/server/` -> `npm run dev|build|lint|start`
+- `agents/web/` -> `npm run dev|build|lint|start`
+- `agents/server/` -> `npm run dev|build|pluginbuild|lint|start`
 - `agents/opencode-plug/` -> `npm run build|build:library|build:plugin|build:template|fleet`
 - `agents/serverplug-im/` -> `npm run dev|build|lint|probe`
 - `agents/serverplug-core/` -> `npm run dev|build|lint|build:sdk`

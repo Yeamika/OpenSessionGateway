@@ -6,19 +6,13 @@ import {
 
 const globalForInstanceWorkspaceRegistry = globalThis as unknown as {
   __osgInstanceWorkspaceRegistry?: Map<string, RuntimeInstanceWorkspaceBundle>;
-  __osgCallerToRuntimeID?: Map<string, string>;
 };
 
 if (!globalForInstanceWorkspaceRegistry.__osgInstanceWorkspaceRegistry) {
   globalForInstanceWorkspaceRegistry.__osgInstanceWorkspaceRegistry = new Map<string, RuntimeInstanceWorkspaceBundle>();
 }
 
-if (!globalForInstanceWorkspaceRegistry.__osgCallerToRuntimeID) {
-  globalForInstanceWorkspaceRegistry.__osgCallerToRuntimeID = new Map<string, string>();
-}
-
 const registry = globalForInstanceWorkspaceRegistry.__osgInstanceWorkspaceRegistry;
-export const runtimeIDByCallerKey = globalForInstanceWorkspaceRegistry.__osgCallerToRuntimeID;
 
 function keyOf(runtimeID: string, instanceWorkspaceDirectory: string) {
   return `${runtimeID.trim()}::${instanceWorkspaceDirectory.trim()}`;
@@ -74,9 +68,6 @@ export function clearRuntimeInstanceWorkspaces(runtimeID: string): void {
   if (!runtime) return;
   for (const [key, value] of registry.entries()) {
     if (value.runtimeID === runtime) {
-      for (const callerKey of value.mcp.callerKeys) {
-        runtimeIDByCallerKey.delete(callerKey);
-      }
       registry.delete(key);
     }
   }

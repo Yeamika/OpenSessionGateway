@@ -2,82 +2,67 @@
 
 ## Overview
 
-The current OSG server exposes three MCP-style HTTP endpoints under `/api/v2/mcp/`:
+The current gateway serves MCP through the dynamic route `/api/v2/mcp/[surface]`.
+Surfaces are registered by plugins, so availability depends on which plugins are loaded.
 
-- `/api/v2/mcp/runtime_control`
-- `/api/v2/mcp/session_bridge`
-- `/api/v2/mcp/timer_scheduler`
-- `/api/v2/mcp/timer_manager`
+Current core surfaces include:
 
-These endpoints accept JSON-RPC-shaped requests and return JSON-RPC responses.
-The tool-call pattern currently used is:
+- `runtime_control`
+- `session_bridge`
+- `timer_scheduler`
+- `timer_manager`
+
+Optional plugin surfaces such as `im_gateway_control` and `im_gateway_chat` appear only when those plugins are loaded.
+
+## Common RPC flow
+
+The current tool-call flow is:
 
 1. `initialize`
 2. optional `notifications/initialized`
 3. `tools/list`
 4. `tools/call`
 
-## Common RPC Shape
+`GET /api/v2/mcp/<surface>` returns the surface info payload.
+`POST /api/v2/mcp/<surface>` handles JSON-RPC requests.
+Unknown surfaces return `404`.
 
-Successful responses are returned as:
+Tool results are usually wrapped as text content whose body is JSON stringified, so callers often need to parse `result.content[0].text`.
 
-```json
-{
-  "jsonrpc": "2.0",
-  "id": 1,
-  "result": { ... }
-}
-```
-
-Errors are returned as:
-
-```json
-{
-  "jsonrpc": "2.0",
-  "id": 1,
-  "error": {
-    "code": -32602,
-    "message": "..."
-  }
-}
-```
-
-Tool results are generally wrapped as a text payload whose content is JSON stringified.
-That means integrations often need to parse `result.content[0].text` as JSON.
-
-## runtime_control
+## `runtime_control`
 
 ### Purpose
 
-The `runtime_control` endpoint is the control/discovery surface for runtimes, sessions, InstanceWorkspaces, and model-related actions.
+`runtime_control` is the discovery and control surface for runtimes, sessions, instance workspaces, models, runtime probing, and runtime permissions.
 
-### Implemented Tools
+### Implemented tools
 
-Current tool list in code:
-
-- `ListClients`
-- `ListClientSessions`
+- `ListRuntime`
+- `ListClientDisplays`
+- `ListActivedSessions`
+- `ListClientInstanceWorkspaces`
+- `ListRuntimeAvailableModels`
+- `GetSessionLastUsedModel`
+- `RequestRuntime`
 - `CreateNewSession`
-- `AddPrompt`
-- `SpawnSession`
 - `RenameClientSession`
 - `SetClientDisplaySession`
 - `AbortClientSession`
-- `ListAvailableModels`
-- `GetSessionLastUsedModel`
-- `ListClientInstanceWorkspaces`
+- `AddPrompt`
 - `ReloadClientInstanceWorkspace`
+- `ListRuntimePermissions`
+- `GetRuntimePermission`
+- `ResolveRuntimePermission`
 
-### Behavior Notes
+### Behavior notes
 
-- `initialize` does not appear to require a specific runtime binding.
-- This endpoint behaves more like a global control plane.
-- It is suitable for discovery and administrative actions.
-- `AddPrompt` is now exposed here as a direct control tool for sending a user message into a targeted live runtime/session, with optional per-turn `system` info.
+- `initialize` does not require a specific runtime binding.
+- This surface behaves like a global control plane.
+- `AddPrompt` sends a user message into a targeted runtime and session, with optional per-turn `system` info.
 
-### AddPrompt Semantics
+### `AddPrompt` semantics
 
-The MCP tool name is `AddPrompt`, while the protocol path still uses the historical identifier `AddPromot`.
+The MCP tool name is `AddPrompt`, while the WS protocol helper still uses the historical identifier `AddPromot`.
 
 Current request shape:
 
@@ -93,25 +78,17 @@ Current request shape:
 
 Current meaning:
 
-- `msg` is always the user message for that turn,
-- `system` is optional extra system context for that turn,
-- `role` is no longer the intended control surface for arbitrary message injection.
+- `msg` is always the user message for that turn
+- `system` is optional extra system context for that turn
+- `role` is no longer the intended surface for arbitrary-role prompt injection
 
-Migration note:
-
-- old role-based usage like `role: "system"` should move to `system`,
-- old role-based usage like `role: "tool"` should not be treated as supported `AddPrompt` behavior anymore,
-- integrations should treat `AddPrompt` as session input, not a generic arbitrary-role message writer.
-
-## session_bridge
+## `session_bridge`
 
 ### Purpose
 
-The `session_bridge` endpoint is the runtime-bound bridge for interacting with live sessions and mailbox-like session communication.
+`session_bridge` is the runtime-bound live session surface for message retrieval and mailbox workflows.
 
-### Implemented Tools
-
-Current tool list in code:
+### Implemented tools
 
 - `ListLivingSessions`
 - `GetSessionMessages`
@@ -120,31 +97,21 @@ Current tool list in code:
 - `SendMailboxItem`
 - `ReadMailboxItem`
 
-### Runtime Binding Requirement
+### Runtime binding notes
 
-Unlike `runtime_control`, `session_bridge` requires a runtime binding.
-A runtime must be resolved by passing `runtimeID` in the request query string.
+- `initialize` accepts `runtimeID` from params or query.
+- `tools/call` still requires `runtimeID` in the current request query.
+- The surface checks that the selected runtime is online before serving tools.
 
-The endpoint validates that the selected runtime is online.
-If the runtime is missing or offline, the request is rejected.
+Mailbox tools also use `ExecutorSessionID` for the current executor session bucket instead of guessing sender state from caller identity.
 
-### Behavior Notes
-
-This endpoint is effectively the live interaction plane for session content and mailbox workflows.
-It is used by the Feishu bridge to:
-
-- fetch recent session messages.
-- mailbox tools that operate on the current executor session now use `ExecutorSessionID` instead of guessing sender/session context from caller identity.
-
-## timer_scheduler
+## `timer_scheduler`
 
 ### Purpose
 
-The `timer_scheduler` endpoint is the self-bucket timer surface for scheduling deferred prompts into the current executor session bucket.
+`timer_scheduler` is the self-bucket timer surface for the current executor session bucket.
 
-### Implemented Tools
-
-Current tool list in code:
+### Implemented tools
 
 - `CreateOneShotTimer`
 - `CreatePeriodicTimer`
@@ -152,25 +119,19 @@ Current tool list in code:
 - `DeleteRuntimeTimer`
 - `ListRuntimeTimers`
 
-### Behavior Notes
+### Behavior notes
 
-- `timer_scheduler` resolves the runtime from the MCP handshake query and the session from `ExecutorSessionID`.
-- This surface is limited to the caller's current timer bucket.
-- `CreatePeriodicTimer` repeats every `everySeconds`.
-- `CreateCronTimer` uses a 5-field UTC cron expression: `minute hour day month weekday`.
-- When a timer fires, the plugin sends `msg: "[OSG-Timer-Triggered]"` with timer metadata in the per-turn `system` field.
-- One-shot timers are deleted after success; periodic and cron timers advance `triggerAt` to the next occurrence.
-- If the target runtime/session is unavailable when firing, the timer moves to `waiting_runtime` and retries later.
+- `tools/call` requires `runtimeID` in the request query.
+- The target session is read from `ExecutorSessionID`.
+- Timers fire by sending `msg: "[OSG-Timer-Triggered]"` with timer metadata in the per-turn `system` field.
 
-## timer_manager
+## `timer_manager`
 
 ### Purpose
 
-The `timer_manager` endpoint is the manager surface for inspecting and managing timers across all runtime/session buckets.
+`timer_manager` is the manager surface for inspecting and managing timers across all runtime and session buckets owned by the plugin.
 
-### Implemented Tools
-
-Current tool list in code:
+### Implemented tools
 
 - `CreateOneShotTimer`
 - `CreatePeriodicTimer`
@@ -179,22 +140,16 @@ Current tool list in code:
 - `ListRuntimeTimers`
 - `ListAllTimers`
 
-### Behavior Notes
+### Behavior notes
 
-- `timer_manager` takes explicit `runtimeID` + `sessionID` target arguments.
-- `ListAllTimers` returns timers across all buckets owned by the plugin.
-- Timers are stored per `runtimeID` + `sessionID`, not per InstanceWorkspace.
+- Calls take explicit `runtimeID` and `sessionID` target arguments.
+- Timers are stored per runtime and session bucket, not per instance workspace.
 
-## Important Design Distinction
+## Design distinction
 
-The current implementation suggests a deliberate separation:
+The important split is still:
 
-- `runtime_control` = discovery / control / management plane
-- `session_bridge` = live session interaction plane for session messages and mailbox workflows
+- `runtime_control` = discovery and management plane
+- `session_bridge` = live session interaction and mailbox plane
 
-This distinction is important and should remain explicit in future docs and integrations.
-
-## Naming Note
-
-The protocol library still contains a historical identifier named `AddPromot`, but the MCP tool exposed by `runtime_control` is `AddPrompt`.
-This should be documented carefully to avoid confusion when mapping protocol objects to MCP tool names and when describing the narrowed user-message semantics.
+Keep those responsibilities separate in docs and new tool design.

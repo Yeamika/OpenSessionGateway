@@ -1,0 +1,174 @@
+name: osg-opencode-suite
+
+x-lab-common: &lab-common
+  build:
+    context: ../..
+    dockerfile: docker/osg-opencode-suite/Dockerfile
+  env_file:
+    - .env
+  networks:
+    - osg-lab
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
+  volumes:
+    - ../../:/sources/OpenSessionGateway:ro
+    - ../../../Yaemio/opencode:/sources/opencode:ro
+
+services:
+  developerscontain:
+    <<: *lab-common
+    container_name: developerscontain
+    hostname: developerscontain
+    stdin_open: true
+    tty: true
+    environment:
+      LAB_SYNC_ALWAYS: "1"
+      LAB_FORCE_INSTALL: "0"
+    volumes:
+      - ../../:/sources/OpenSessionGateway:ro
+      - ../../../Yaemio/opencode:/sources/opencode:ro
+      - developerscontain-workspace:/workspace
+      - developerscontain-runtime:/runtime
+    command: ["/opt/osg-opencode-suite/scripts/start-developer-shell.sh"]
+
+  main-osg:
+    <<: *lab-common
+    container_name: main-osg
+    hostname: main-osg
+    restart: unless-stopped
+    environment:
+      LAB_SYNC_ALWAYS: "0"
+      LAB_FORCE_INSTALL: "0"
+      PORT: "4088"
+      OSG_ADMIN_PORT: "4091"
+      OSG_BIND_HOST: "${MAIN_OSG_BIND_HOST:-0.0.0.0}"
+      OSG_LISTEN_BACKLOG: "${MAIN_OSG_LISTEN_BACKLOG:-511}"
+      OSG_ADMIN_BIND_HOST: "${MAIN_OSG_ADMIN_BIND_HOST:-127.0.0.1}"
+      OSG_ADMIN_LISTEN_BACKLOG: "${MAIN_OSG_ADMIN_LISTEN_BACKLOG:-511}"
+      OSG_SERVER_RUNTIME_DIR: "/runtime/osg"
+    ports:
+      - "${MAIN_OSG_HOST_PORT:-4088}:4088"
+      - "${MAIN_OSG_ADMIN_HOST_PORT:-4091}:4091"
+    volumes:
+      - ../../:/sources/OpenSessionGateway:ro
+      - ../../../Yaemio/opencode:/sources/opencode:ro
+      - main-osg-workspace:/workspace
+      - main-osg-runtime:/runtime
+    command: ["/opt/osg-opencode-suite/scripts/start-osg.sh"]
+
+  osg-test:
+    <<: *lab-common
+    container_name: osg-test
+    hostname: osg-test
+    restart: unless-stopped
+    environment:
+      LAB_SYNC_ALWAYS: "1"
+      LAB_FORCE_INSTALL: "0"
+      PORT: "4088"
+      OSG_ADMIN_PORT: "4091"
+      OSG_BIND_HOST: "${OSG_TEST_BIND_HOST:-0.0.0.0}"
+      OSG_LISTEN_BACKLOG: "${OSG_TEST_LISTEN_BACKLOG:-511}"
+      OSG_ADMIN_BIND_HOST: "${OSG_TEST_ADMIN_BIND_HOST:-0.0.0.0}"
+      OSG_ADMIN_LISTEN_BACKLOG: "${OSG_TEST_ADMIN_LISTEN_BACKLOG:-511}"
+      OSG_SERVER_RUNTIME_DIR: "/runtime/osg"
+    ports:
+      - "${OSG_TEST_HOST_PORT:-4188}:4088"
+      - "${OSG_TEST_ADMIN_HOST_PORT:-4191}:4091"
+    volumes:
+      - ../../:/sources/OpenSessionGateway:ro
+      - ../../../Yaemio/opencode:/sources/opencode:ro
+      - osg-test-workspace:/workspace
+      - osg-test-runtime:/runtime
+    command: ["/opt/osg-opencode-suite/scripts/start-osg.sh"]
+
+  opencode-test-a:
+    <<: *lab-common
+    container_name: opencode-test-a
+    hostname: opencode-test-a
+    depends_on:
+      - osg-test
+    restart: unless-stopped
+    environment:
+      LAB_SYNC_ALWAYS: "1"
+      LAB_FORCE_INSTALL: "0"
+      OSG_BASE_URL: "http://osg-test:4088/api/v2"
+      OSG_RUNTIME_ID: "run_plugin_linux_opencode_test_a"
+      OSG_LOG_DIR: "/runtime/osg-logs"
+      OPENCODE_PORT: "9202"
+      OPENCODE_HOST: "0.0.0.0"
+      OPENCODE_CONFIG_DIR: "/runtime/opencode-config"
+      OPENCODE_WORKDIR: "/runtime/workspaces/test-a"
+    ports:
+      - "${OPENCODE_TEST_A_HOST_PORT:-9202}:9202"
+    volumes:
+      - ../../:/sources/OpenSessionGateway:ro
+      - ../../../Yaemio/opencode:/sources/opencode:ro
+      - opencode-test-a-workspace:/workspace
+      - opencode-test-a-runtime:/runtime
+    command: ["/opt/osg-opencode-suite/scripts/start-opencode-runtime.sh"]
+
+  opencode-test-b:
+    <<: *lab-common
+    container_name: opencode-test-b
+    hostname: opencode-test-b
+    depends_on:
+      - osg-test
+    restart: unless-stopped
+    environment:
+      LAB_SYNC_ALWAYS: "1"
+      LAB_FORCE_INSTALL: "0"
+      OSG_BASE_URL: "http://osg-test:4088/api/v2"
+      OSG_RUNTIME_ID: "run_plugin_linux_opencode_test_b"
+      OSG_LOG_DIR: "/runtime/osg-logs"
+      OPENCODE_PORT: "9203"
+      OPENCODE_HOST: "0.0.0.0"
+      OPENCODE_CONFIG_DIR: "/runtime/opencode-config"
+      OPENCODE_WORKDIR: "/runtime/workspaces/test-b"
+    ports:
+      - "${OPENCODE_TEST_B_HOST_PORT:-9203}:9203"
+    volumes:
+      - ../../:/sources/OpenSessionGateway:ro
+      - ../../../Yaemio/opencode:/sources/opencode:ro
+      - opencode-test-b-workspace:/workspace
+      - opencode-test-b-runtime:/runtime
+    command: ["/opt/osg-opencode-suite/scripts/start-opencode-runtime.sh"]
+
+  opencode-test-community-event:
+    <<: *lab-common
+    container_name: opencode-test-community-event
+    hostname: opencode-test-community-event
+    restart: unless-stopped
+    environment:
+      LAB_SYNC_ALWAYS: "1"
+      LAB_FORCE_INSTALL: "0"
+      OPENCODE_NPM_PACKAGE: "opencode-ai@latest"
+      OPENCODE_PORT: "10086"
+      OPENCODE_HOST: "0.0.0.0"
+      OPENCODE_CONFIG_DIR: "/runtime/opencode-config"
+      OPENCODE_WORKDIR: "/runtime/workspaces/community-event"
+    ports:
+      - "10086:10086"
+    volumes:
+      - ../../:/sources/OpenSessionGateway:ro
+      - ../../../Yaemio/opencode:/sources/opencode:ro
+      - opencode-test-community-event-workspace:/workspace
+      - opencode-test-community-event-runtime:/runtime
+    command: ["/opt/osg-opencode-suite/scripts/start-opencode-npm.sh"]
+
+networks:
+  osg-lab:
+    driver: bridge
+
+volumes:
+  developerscontain-workspace:
+  developerscontain-runtime:
+  main-osg-workspace:
+  main-osg-runtime:
+  osg-test-workspace:
+  osg-test-runtime:
+  opencode-test-a-workspace:
+  opencode-test-a-runtime:
+  opencode-test-b-workspace:
+  opencode-test-b-runtime:
+  opencode-test-community-event-workspace:
+  opencode-test-community-event-runtime:

@@ -196,6 +196,24 @@ function stableStringify(value: unknown): string {
   return `{${Object.keys(src).sort((a, b) => a.localeCompare(b)).map((key) => `${JSON.stringify(key)}:${stableStringify(src[key])}`).join(",")}}`;
 }
 
+function explicitEnabledEntry(config: unknown): Record<string, unknown> | null {
+  if (!config || typeof config !== "object" || Array.isArray(config)) return null;
+  const src = config as Record<string, unknown>;
+  return src.enabled === true ? src : null;
+}
+
+function mergeManagedConfig(generated: unknown, existing: unknown): Record<string, unknown> {
+  const base = generated && typeof generated === "object" ? generated as Record<string, unknown> : {};
+  const explicit = explicitEnabledEntry(existing);
+  if (!explicit) return { ...base, enabled: true };
+  const { type: _type, url: _url, ...rest } = explicit;
+  return {
+    ...base,
+    ...rest,
+    enabled: true,
+  };
+}
+
 export async function applyOsgMcpConfig(
   cfg: Record<string, unknown>,
   writeLog: (level: string, message: string, extra?: Record<string, unknown>) => Promise<void>,
@@ -208,7 +226,7 @@ export async function applyOsgMcpConfig(
   const instanceWorkspaceDirectory = typeof getInstanceWorkspaceDirectory === "function" ? getInstanceWorkspaceDirectory() : "";
   const routeSegments = await discoverRouteSegments({ wsServerUrl });
   const mcpBaseUrl = deriveMcpBaseUrl({ wsServerUrl });
-  const mcp = buildOsgMcpConfig({
+  const generatedMcp = buildOsgMcpConfig({
     routeSegments,
     runtimeID,
     instanceWorkspaceDirectory,
@@ -216,12 +234,16 @@ export async function applyOsgMcpConfig(
   });
   const previous = normalizeMcpRecord(cfg.mcp);
   const previousManagedNames = readManagedNamesMeta(cfg);
-  const nextManagedNames = [...new Set(routeSegments.map((item) => item.trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
   const managedBases = managedBaseCandidates(mcpBaseUrl, readManagedBaseMeta(cfg));
   const unmanaged = Object.fromEntries(Object.entries(previous).filter(([name, value]) => !isManagedEntry(name, value, previousManagedNames, managedBases)));
+  const enabledNames = routeSegments
+    .filter((name) => explicitEnabledEntry(unmanaged[name]))
+    .sort((a, b) => a.localeCompare(b));
+  const managed = Object.fromEntries(enabledNames.map((name) => [name, mergeManagedConfig(generatedMcp[name], unmanaged[name])]));
+  const nextManagedNames = [...enabledNames];
   const next = {
     ...unmanaged,
-    ...mcp,
+    ...managed,
   };
   const changed = stableStringify(previous) !== stableStringify(next);
   cfg.mcp = next;
@@ -229,13 +251,13 @@ export async function applyOsgMcpConfig(
   writeManagedBaseMeta(cfg, mcpBaseUrl);
   if (changed) {
     await writeLog("info", "mcp config injected", {
-      names: Object.keys(mcp),
+      names: enabledNames,
       discovered: routeSegments.length > 0,
-    instanceWorkspaceDirectory: instanceWorkspaceDirectory || undefined,
-  });
-}
+      instanceWorkspaceDirectory: instanceWorkspaceDirectory || undefined,
+    });
+  }
   return {
-    names: Object.keys(mcp),
+    names: enabledNames,
     discovered: routeSegments.length > 0,
     changed,
   };

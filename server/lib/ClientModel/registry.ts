@@ -5,7 +5,6 @@ import {
 } from "@/lib/ClientModel/session/registry";
 import {
   clearRuntimeInstanceWorkspaces,
-  runtimeIDByCallerKey,
 } from "@/lib/ClientModel/instance-workspace/registry";
 
 const globalForRuntimeRegistry = globalThis as unknown as {
@@ -56,19 +55,6 @@ export function removeRuntimeBundle(runtimeID: string): void {
   clearRuntimeInstanceWorkspaces(clean);
   clearRuntimeDisplays(clean);
   registry.delete(clean);
-}
-
-export function bindCallerToRuntime(callerKey: string, runtimeID: string): void {
-  const key = callerKey.trim();
-  if (!key) return;
-  ensureRuntimeBundle(runtimeID);
-  runtimeIDByCallerKey.set(key, runtimeID.trim());
-}
-
-export function resolveRuntimeByCaller(callerKey: string): string {
-  const key = callerKey.trim();
-  if (!key) return "";
-  return runtimeIDByCallerKey.get(key) || "";
 }
 
 export function isRuntimeOnlineInHub(runtimeID: string): boolean {

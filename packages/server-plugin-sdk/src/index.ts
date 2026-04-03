@@ -270,8 +270,6 @@ export type PluginOsgApi = {
     actor?: string;
     correlationID?: string;
   }) => Promise<{ ok: boolean; permissionID: string; action: PluginPermissionDecision; error?: string }>;
-  bindCallerToRuntime: (callerKey: string, runtimeID: string) => Promise<void>;
-  resolveRuntimeByCaller: (callerKey: string) => Promise<string>;
 };
 
 export type McpPluginInfo = {

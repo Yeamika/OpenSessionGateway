@@ -2,100 +2,59 @@
 
 ## Why This Exists
 
-A recurring OSG maintenance risk is assuming that a named protocol event is already a fully working end-to-end feature.
-That assumption is often too optimistic.
+A recurring OSG maintenance risk is collapsing three different things into one statement:
 
-This document separates three layers:
+1. protocol shape,
+2. server routing,
+3. client implementation.
 
-1. protocol definition,
-2. server-side routing/handling,
-3. client-side implementation evidence currently observed in this workspace.
-
-It is a working map from code inspection, not a final certification matrix.
+This note keeps them separate.
 
 ## How To Read This
 
-For each capability below, ask three separate questions:
+For each capability below, ask three questions:
 
-- Is the protocol/event shape defined?
-- Does the server route or consume it?
-- Is there a real client implementation here that appears to honor it meaningfully?
+- Is the protocol or WS event shape defined?
+- Does the server route or consume it today?
+- Is there in-repo client evidence beyond a type definition?
 
-Do not collapse those into one yes/no answer.
+## Current Matrix
 
-## Status Table
+| Capability                                        | Protocol layer                | Server layer                                                                         | Client evidence                                                              | Notes                                                                     |
+| ------------------------------------------------- | ----------------------------- | ------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| `ClientContentExecuteing`                         | Defined in `protocol-library` | Consumed in `server/lib/v2/ws/ws-event.ts` and cached in `server/lib/v2/ws/index.ts` | `client-template` and `client-opencode-plugin-v2` both emit/report it        | Main source of session activity and live runtime rows                     |
+| `AddPromot` / MCP `AddPrompt`                     | Defined in `protocol-library` | Routed through WS helpers and exposed by `runtime_control`                           | `client-template` and `client-opencode-plugin-v2` both handle it             | Current meaning is user `msg` plus optional `model` and per-turn `system` |
+| `CreateNewSession`                                | Defined in `protocol-library` | Routed by `runtime_control`                                                          | `client-template` and `client-opencode-plugin-v2` both handle it             | Also used by IM gateway session-binding creation                          |
+| `GetSessionMsg`                                   | Defined in `protocol-library` | Routed by WS helpers and exposed by `session_bridge`                                 | `client-template` and `client-opencode-plugin-v2` both handle it             | Used for live session message retrieval                                   |
+| `SetClientDisplaySession`                         | Defined in `protocol-library` | Routed by `runtime_control`                                                          | `client-template` and `client-opencode-plugin-v2` both handle it             | Display-targeted session switch                                           |
+| `AbortSessionOfClient` / MCP `AbortClientSession` | Defined in `protocol-library` | Routed by `runtime_control`                                                          | `client-template` and `client-opencode-plugin-v2` both handle it             | Session abort control path                                                |
+| `RequestRuntime`                                  | Defined in `protocol-library` | Routed by WS helpers and exposed by `runtime_control`                                | `client-template` and `client-opencode-plugin-v2` both handle it             | Used to refresh runtime-side current snapshot                             |
+| Permission asked / updated / resolve              | Defined in `protocol-library` | Server stores permission records and exposes permission tools                        | `client-template` and `client-opencode-plugin-v2` both contain resolve paths | Separate live state plane from session messages                           |
+| `ServerToast`                                     | Defined in `protocol-library` | Emitted by server WS helpers                                                         | `client-template` and `client-opencode-plugin-v2` both handle it             | UI meaning remains client-specific                                        |
 
-| Capability | Protocol layer | Server layer | Client evidence in current workspace | Current confidence |
-| --- | --- | --- | --- | --- |
-| `ClientContentExecuteing` | Defined in `protocol-library` | Consumed in `server/lib/v2/ws/ws-event.ts` to rebuild workspace/session/display state | No full production client confirmed yet; template/protocol support exists around WS event handling | medium |
-| `RequestCurrentInfo` | Defined in `protocol-library` | Handler exists, but server-side polling/request loop is currently commented out | `client-template` responds to it | medium |
-| `ListSession` | Request/response payloads defined | Server can emit request and cache last session list | `client-template` routes event to a handler, but real completeness still unverified | low-to-medium |
-| `AddPromot` | Defined in `protocol-library` | Server can emit request toward runtime and expose it through MCP/session bridge paths | `client-template` currently only returns `{ accepted: true }`, so template is not proof of full behavior | low |
-| `GetSessionMsg` | Defined in `protocol-library` | Server can request it and bridge code depends on it | `client-template` routes to handler, but real message semantics still need validation | low-to-medium |
-| `CreateNewSession` | Defined in `protocol-library` | Server emits request from runtime control tools | No convincing real client behavior confirmed yet from current reading | low |
-| `SetClientDisplaySession` | Defined in `protocol-library` | Server emits request from runtime control tools | Template routes it, but real implementation depth still unclear | low |
-| `AbortSessionOfClient` | Defined in protocol package | Server emits request from runtime control tools | Template routes it; production behavior still not validated | low-to-medium |
-| `ServerToast` | WS event shape effectively used by server | Server emits it | Template accepts it; UI semantics depend on client | medium |
+## Current Interpretations
 
-## Important Interpretations
+### `ClientContentExecuteing` is the key live-state input
 
-### 1. `ClientContentExecuteing` currently looks like the most architecturally important event
+The current gateway learns most session activity, display association, and instance-workspace context from `ClientContentExecuteing`.
+If clients stop reporting it correctly, the live view becomes thin or misleading.
 
-Even without proving every other tool path, current server code makes this event structurally important because it rebuilds or refreshes visible live runtime state:
+### MCP surfaces are not the same as WS protocol events
 
-- workspace association,
-- session association,
-- display association,
-- session title/status.
+MCP surfaces are plugin-backed HTTP layers served from `/api/v2/mcp/[surface]`.
+They often trigger WS events under the hood, but they are a separate server interface with their own availability rules.
 
-If this event is absent, delayed, or only partially implemented by a client, the server's live view can become thin or misleading.
+### `RequestCurrentInfo` should not be treated as current core behavior
 
-### 2. `RequestCurrentInfo` exists, but is not currently the center of truth refresh
+The current docs should not present `RequestCurrentInfo` as an active center of truth refresh.
+The current server state model is driven by WS queue caches and `ClientContentExecuteing`.
 
-The protocol exists.
-The template client can answer.
-But the server's own polling/request loop is commented out.
+## Practical Rule
 
-That means maintainers should be careful not to describe OSG as though current-info polling is actively maintaining the server's state model today.
-
-### 3. Template support is not proof of production support
-
-`client-template` is useful for understanding intended protocol shape.
-It is not strong evidence that a feature is fully implemented in the real client(s) used in practice.
-
-That matters especially for:
-
-- `AddPromot`
-- `CreateNewSession`
-- `SetClientDisplaySession`
-- `GetSessionMsg`
-
-### 4. Bridge packages may rely on optimistic assumptions
-
-The Feishu bridge README already assumes certain OSG session operations exist and behave well enough to bridge chat traffic.
-That may be directionally correct, but it is not the same as having a validated end-to-end contract.
-
-Maintainers should document where a bridge depends on a capability that is:
-
-- protocol-defined,
-- server-routed,
-- but not yet deeply validated in a real client implementation.
-
-## Practical Maintenance Rule
-
-When someone says "OSG supports X", rewrite that mentally into three checks:
+When someone says "OSG supports X", translate that into:
 
 1. protocol defines X,
-2. server routes/consumes X,
-3. at least one real client reliably implements X.
+2. server routes or consumes X,
+3. at least one client here actually implements X.
 
-Only after all three are true should docs present X as a stable end-to-end capability.
-
-## Suggested Next Validation Targets
-
-If continuing OSG maintenance, the most useful next checks are:
-
-1. identify the real client implementation(s) actually used with this server,
-2. verify whether `ClientContentExecuteing` is sent on connect, session switch, and workspace switch,
-3. verify whether `AddPromot` and `GetSessionMsg` are truly functional end-to-end,
-4. document any gap between template behavior and production behavior.
+Only then should docs present X as a stable end-to-end capability.

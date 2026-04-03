@@ -8,7 +8,7 @@
     {
       "surface": "runtime_control",
       "method": "tools/call",
-      "tool": "ListClients",
+      "tool": "ListRuntime",
       "arguments": {
         "list": 100
       },

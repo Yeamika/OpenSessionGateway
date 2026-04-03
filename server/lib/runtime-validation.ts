@@ -1,5 +1,6 @@
 import { getRuntimeSessionBundle } from "@/lib/runtime-hub";
 import { listRuntimeClients } from "@/lib/runtime-store";
+import { requestRuntime } from "@/lib/v2/ws";
 
 export async function hasOnlineRuntime(runtimeID: string): Promise<boolean> {
   const clean = runtimeID.trim();
@@ -15,7 +16,13 @@ export async function hasOnlineRuntimeSession(runtimeID: string, sessionID: stri
   const clients = await listRuntimeClients();
   const runtimeOnline = clients.some((item) => item.status === "online" && item.runtimeID === runtime);
   if (!runtimeOnline) return false;
-  return Boolean(getRuntimeSessionBundle(runtime, session));
+  if (getRuntimeSessionBundle(runtime, session)) return true;
+  try {
+    const probed = await requestRuntime(runtime, { sessionID: session });
+    return probed?.session?.exists === true;
+  } catch {
+    return false;
+  }
 }
 
 export async function requireOnlineRuntime(runtimeID: string): Promise<void> {

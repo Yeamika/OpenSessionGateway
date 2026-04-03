@@ -2,110 +2,87 @@
 
 ## What OSG Is
 
-OSG (OpenSessionGateway) is a session-oriented runtime gateway system.
-It is designed to connect runtime clients, keep track of their sessions and workspaces, and expose those capabilities through HTTP and WebSocket interfaces.
+OSG (OpenSessionGateway) is a session-oriented runtime gateway.
+It connects runtime clients over WebSocket, reconstructs live runtime and session state in memory, and exposes that state through plugin-backed MCP HTTP surfaces and monitoring endpoints.
 
 At a high level, OSG sits between:
 
 - runtime clients that maintain active execution contexts,
-- external control or bridge layers that need to send prompts and fetch session output,
-- integration layers such as Feishu and OpenCode-related plugins.
+- control layers that need to inspect or drive runtimes and sessions,
+- plugin integrations such as OpenCode and IM gateway adapters.
 
-## Top-Level Project Layout
+## Top-Level Layout
 
 Current workspace root:
 
 - `OpenSessionGateway/`
-  - `server/`
+  - `agents/`
+  - `docs/`
   - `packages/`
-    - `protocol-library/`
-    - `client-library/`
-    - `client-opencode-plugin-v2/`
-    - `client-template/`
-    - `server-plugin-sdk/`
   - `plugins/`
-
-Related sibling directories outside this workspace root also exist under `/mnt/data/OPENCODE_AUTO`, including `OSG-Claw/`, `Yaemio/opencode/`, and build output directories, but the main OSG system currently centers on `OpenSessionGateway/`.
+  - `server/`
+  - `web/`
 
 ## Main Modules
 
-### server
+### `server/`
 
-The `server/` package is the central OSG service.
-It runs a Next.js-based application with a custom Node HTTP server and a WebSocket upgrade path.
+`server/` is the central gateway service.
+It serves a small landing page, accepts runtime WebSocket connections at `/api/v2/wsport`, exposes plugin-backed MCP surfaces at `/api/v2/mcp/[surface]`, streams live monitor data at `/api/monitor/stream`, and runs the local plugin admin server.
 
-Current confirmed responsibilities include:
+Its live runtime, session, instance-workspace, display, and permission state is mostly reconstructed in memory.
 
-- serving the main HTTP application,
-- handling WebSocket runtime connections at `/api/v2/wsport`,
-- exposing MCP-style HTTP endpoints under `/api/v2/mcp/...`,
-- maintaining in-memory runtime queue state,
-- tracking runtime/session/workspace-related state.
+### `web/`
 
-### packages/protocol-library
+`web/` is the main interactive monitor/admin UI.
+It proxies `/api/*` requests to the gateway origin and consumes the gateway monitor SSE stream from `/api/monitor/stream`.
 
-The `packages/protocol-library/` package defines shared protocol structures used across the system.
-It includes:
+### `packages/protocol-library/`
 
-- generic WebSocket envelope types,
-- connected / ping / error event payloads,
-- session and runtime-related request/response payload creators and readers.
+This package defines shared WS protocol structures and payload helpers used across server and client code.
+It is the contract layer, not the implementation layer.
 
-This package is a contract layer between server-side and client-side OSG components.
+### `packages/client-library/`
 
-### packages/client-library
+This package exports `OSGClient`, the reusable runtime client wrapper for OSG WebSocket connections, request handling, logging, and reconnect behavior.
 
-The `packages/client-library/` package provides a reusable OSG client implementation.
-Its main exported abstraction is `OSGClient`, which wraps:
+### `packages/client-opencode-plugin-v2/`
 
-- WebSocket connection setup,
-- runtime registration parameters,
-- logging,
-- reconnect behavior,
-- request/response handling for server-originated events.
+This package connects an OpenCode environment to OSG.
+It starts an OSG runtime client, reports runtime and session state, and handles server-originated WS requests such as `AddPromot`, `CreateNewSession`, `GetSessionMsg`, `RequestRuntime`, and permission flows.
 
-### packages/client-opencode-plugin-v2
+### `packages/client-template/`
 
-This package appears to be the OpenCode-facing plugin integration for OSG.
-It creates an OSG-aware hook client that:
+This is the reference example client and smoke-test client for OSG WS behavior.
+It is useful for validating protocol and server assumptions.
 
-- starts an OSG runtime connection,
-- provides tool integration,
-- applies MCP-related config,
-- reacts to external events,
-- cleans up on shutdown.
+### `packages/server-plugin-sdk/`
 
-### plugins
+This package defines the server plugin manifest, lifecycle, storage, and MCP surface APIs used by `server/` plugins.
 
-The `plugins/` directory stores package-style OSG server plugins.
-It currently includes a generic IM bridge plugin alongside MCP surface plugins such as runtime control and session bridge.
+### `plugins/`
 
-The IM bridge's role is to:
+`plugins/` stores package-style OSG server plugins loaded from configured plugin roots.
+Current repo-shipped plugin packages include:
 
-- host third-party IM provider adapters under `plugins/`,
-- expose a shared upload port and MCP control surface,
-- keep provider image keys hidden behind internal `uploadID` values,
-- let provider-specific modules handle native IM API details.
+- `runtime-control`
+- `session-bridge`
+- `timer-scheduler`
+- `IM-gateway`
+- `_examples/echo-surface`
 
-The bridge now lives under `plugins/IM-bridge/`, with Feishu implemented as a provider module under `plugins/IM-bridge/plugins/feishu/`.
+### `plugins/IM-gateway/`
 
-### packages/client-template
-
-This package is a minimal template for building new OSG-connected clients.
-It exists to make future integrations easier and more consistent.
+`IM-gateway` is the current IM integration package.
+It starts its own local HTTP transfer server, exposes `im_gateway_control` and `im_gateway_chat` MCP surfaces when loaded, and currently ships a builtin `feishu` provider under `plugins/IM-gateway/plugins/feishu/`.
 
 ## Current Design Direction
 
-Based on source inspection, OSG is built around the following idea:
+The current implementation follows this flow:
 
-1. runtime clients connect into the gateway over WebSocket,
-2. the gateway maintains state and event queues for those runtimes,
-3. external systems interact with runtimes and sessions through HTTP MCP endpoints,
-4. bridge layers adapt third-party chat or tool ecosystems into the OSG session model.
+1. runtime clients connect to the gateway over WebSocket,
+2. the gateway caches live runtime state and activity in memory,
+3. MCP surfaces are registered by plugins and served through `/api/v2/mcp/[surface]`,
+4. integrations such as OpenCode and IM gateway adapt external tools into the OSG runtime and session model.
 
-This means OSG is best understood as a runtime/session coordination layer rather than a simple chat bot backend or a generic proxy.
-
-## Current State of the Docs
-
-The repository already contains small package README files, but a full system-level explanation is still incomplete.
-The documents in this directory are intended to fill that gap.
+OSG is best understood as a runtime and session coordination layer, not as a thin proxy and not as a single chat application.

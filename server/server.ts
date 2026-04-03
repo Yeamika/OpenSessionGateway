@@ -6,14 +6,15 @@ import path from "node:path";
 import next from "next";
 import { WebSocketServer } from "ws";
 
-import { ADMIN_BIND_HOST, startLocalPluginAdminServer } from "./lib/admin-server";
+import { ADMIN_BIND_HOST, startPluginAdminServer } from "./lib/admin-server";
 import { ensureAutoloadPluginsLoaded } from "./lib/plugins/mcp/registry";
 import { handleV2Upgrade } from "./lib/v2/ws";
 
 const dev = process.env.NODE_ENV !== "production";
-const hostname = "0.0.0.0";
 const DEFAULT_PORT = 4088;
 const DEFAULT_ADMIN_PORT = 4091;
+const DEFAULT_HOST = "0.0.0.0";
+const DEFAULT_LISTEN_BACKLOG = 511;
 const SERVER_RUNTIME_DIR = path.resolve(
   process.env.OSG_SERVER_RUNTIME_DIR?.trim() || path.join(__dirname, "..", "agents", "server", ".runtime"),
 );
@@ -30,6 +31,19 @@ function resolvePort(): number {
     throw new Error(`Invalid PORT value: ${process.env.PORT}`);
   }
   return value;
+}
+
+function resolveHost(value: string | undefined, fallback = DEFAULT_HOST): string {
+  const host = value?.trim();
+  return host || fallback;
+}
+
+function resolveBacklog(value: string | undefined, fallback = DEFAULT_LISTEN_BACKLOG): number {
+  const parsed = Number(value ?? fallback);
+  if (!Number.isInteger(parsed) || parsed < 0) {
+    throw new Error(`Invalid backlog value: ${value}`);
+  }
+  return parsed;
 }
 
 function resolveAdminPort(): number {
@@ -69,6 +83,17 @@ async function acquirePortLock(port: number): Promise<PortLockState> {
       }
 
       if (existingPid > 0) {
+        if (existingPid === process.pid) {
+          try {
+            await fs.unlink(lockPath);
+          } catch (unlinkError) {
+            if (!(unlinkError instanceof Error) || (unlinkError as NodeJS.ErrnoException).code !== "ENOENT") {
+              throw unlinkError;
+            }
+          }
+          continue;
+        }
+
         try {
           process.kill(existingPid, 0);
           throw new Error(`Port ${port} is already locked by PID ${existingPid}`);
@@ -111,7 +136,8 @@ function isV2WsPortPath(pathname: string | null): boolean {
 }
 
 function requestPathname(request: IncomingMessage): string | null {
-  return new URL(request.url || "/", `http://${request.headers.host || `${hostname}:${resolvePort()}`}`).pathname;
+  const host = request.headers.host || `${resolveHost(process.env.OSG_BIND_HOST)}:${resolvePort()}`;
+  return new URL(request.url || "/", `http://${host}`).pathname;
 }
 
 function toParsedQuery(url: URL): ParsedUrlQuery {
@@ -134,6 +160,10 @@ function toParsedQuery(url: URL): ParsedUrlQuery {
 async function bootstrap(): Promise<void> {
   const port = resolvePort();
   const adminPort = resolveAdminPort();
+  const hostname = resolveHost(process.env.OSG_BIND_HOST);
+  const backlog = resolveBacklog(process.env.OSG_LISTEN_BACKLOG);
+  const adminBindHost = resolveHost(process.env.OSG_ADMIN_BIND_HOST, ADMIN_BIND_HOST);
+  const adminBacklog = resolveBacklog(process.env.OSG_ADMIN_LISTEN_BACKLOG);
   if (adminPort === port) {
     throw new Error("OSG_ADMIN_PORT must be different from PORT");
   }
@@ -194,9 +224,13 @@ async function bootstrap(): Promise<void> {
     }
   });
 
-  let adminServer: Awaited<ReturnType<typeof startLocalPluginAdminServer>>;
+  let adminServer: Awaited<ReturnType<typeof startPluginAdminServer>>;
   try {
-    adminServer = await startLocalPluginAdminServer({ port: adminPort });
+    adminServer = await startPluginAdminServer({
+      port: adminPort,
+      host: adminBindHost,
+      backlog: adminBacklog,
+    });
   } catch (error) {
     await releaseOnce();
     throw error;
@@ -204,7 +238,7 @@ async function bootstrap(): Promise<void> {
   adminServer.on("close", () => {
     releaseOnce().catch(() => {});
   });
-  adminServer.on("error", (error) => {
+  adminServer.on("error", (error: unknown) => {
     console.error(error instanceof Error ? error.message : String(error));
     releaseOnce().finally(() => process.exit(1));
   });
@@ -226,10 +260,10 @@ async function bootstrap(): Promise<void> {
     releaseOnce().catch(() => {});
   });
 
-  server.listen(port, () => {
+  server.listen({ port, host: hostname, backlog }, () => {
     console.log(`> Ready on http://${hostname}:${port}`);
     console.log(`> WebSocket ready on ws://${hostname}:${port}/api/v2/wsport`);
-    console.log(`> Plugin admin on http://${ADMIN_BIND_HOST}:${adminPort}`);
+    console.log(`> Plugin admin on http://${adminBindHost}:${adminPort}`);
   });
 
   server.on("error", (error) => {

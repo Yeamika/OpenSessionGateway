@@ -6,10 +6,8 @@ import { Worker } from "node:worker_threads";
 import type { NextRequest } from "next/server";
 
 import {
-  bindCallerToRuntime,
   getRuntimeBundle,
   getRuntimeSessionBundle,
-  resolveRuntimeByCaller,
 } from "@/lib/runtime-hub";
 import {
   getManagedRuntimePermission,
@@ -82,9 +80,7 @@ type WorkerHostRequestMessage = {
     | "osg_require_online_runtime_session"
     | "osg_add_prompt"
     | "osg_get_session_messages"
-    | "osg_show_toast"
-    | "osg_bind_caller_to_runtime"
-    | "osg_resolve_runtime_by_caller";
+    | "osg_show_toast";
   payload: Record<string, unknown>;
 };
 
@@ -423,8 +419,6 @@ export type PluginOsgApi = {
     variant?: "info" | "success" | "error";
     durationMs?: number;
   }) => Promise<void>;
-  bindCallerToRuntime: (callerKey: string, runtimeID: string) => Promise<void>;
-  resolveRuntimeByCaller: (callerKey: string) => Promise<string>;
 };
 
 export type PluginContext = {
@@ -873,12 +867,6 @@ function createOsgApi(): PluginOsgApi {
     },
     async showToast(payload) {
       await sendServerToastViaRuntime(payload);
-    },
-    async bindCallerToRuntime(callerKey: string, runtimeID: string) {
-      bindCallerToRuntime(callerKey, runtimeID);
-    },
-    async resolveRuntimeByCaller(callerKey: string) {
-      return resolveRuntimeByCaller(callerKey);
     },
   };
 }
@@ -1977,20 +1965,6 @@ async function handleWorkerHostRequest(record: WorkerPluginRecord, message: Work
         durationMs: Number.isInteger(durationMs) && durationMs > 0 ? durationMs : undefined,
       });
       replyToWorker(record, message.requestID, true);
-      return;
-    }
-
-    if (message.action === "osg_bind_caller_to_runtime") {
-      const callerKey = typeof message.payload.callerKey === "string" ? message.payload.callerKey : "";
-      const runtimeID = typeof message.payload.runtimeID === "string" ? message.payload.runtimeID : "";
-      bindCallerToRuntime(callerKey, runtimeID);
-      replyToWorker(record, message.requestID, true);
-      return;
-    }
-
-    if (message.action === "osg_resolve_runtime_by_caller") {
-      const callerKey = typeof message.payload.callerKey === "string" ? message.payload.callerKey : "";
-      replyToWorker(record, message.requestID, true, resolveRuntimeByCaller(callerKey));
       return;
     }
 

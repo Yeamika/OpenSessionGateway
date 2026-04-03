@@ -1,127 +1,76 @@
 # OSG Architecture and Data Flow
 
-## Core Architectural View
+## Core view
 
-The current OSG architecture can be read as four layers:
+The current OSG implementation is easiest to read as four layers:
 
-1. **Protocol layer** — shared message contracts and event payloads.
-2. **Runtime connection layer** — long-lived WebSocket connections between runtimes and the gateway.
-3. **Gateway control layer** — HTTP MCP endpoints and server-side state coordination.
-4. **Integration layer** — Feishu bridge, OpenCode plugin integration, and future client adapters.
+1. **Protocol layer**: shared WS contracts in `packages/protocol-library/`
+2. **Runtime transport layer**: long-lived WS connections on `/api/v2/wsport`
+3. **Gateway coordination layer**: in-memory runtime state plus plugin-backed MCP routing
+4. **Integration layer**: OpenCode client integration, IM gateway, and the separate `web/` UI
 
-## Main Entities
+## Runtime connect flow
 
-### Runtime
+1. A runtime client connects to `ws://<host>:4088/api/v2/wsport` with `runtimeID` and `host_name`.
+2. The server rejects duplicate active `runtimeID` connections and cleans inactive old queues first.
+3. The server creates the runtime queue, updates the runtime WS bridge, and emits `runtime_connect`.
+4. The server sends the `connected` ack envelope.
+5. Reusable clients treat that ack as the real readiness point.
 
-A runtime is the primary connected execution endpoint in OSG.
-A runtime is identified by `runtimeID` and usually also carries `host_name` when connecting to the WebSocket endpoint.
+## Queue behavior
 
-The server keeps runtime-specific queue state, including:
+Each connected runtime has one queue-like state object that keeps:
 
-- pending request/response tracking,
-- recent events,
-- last active timestamps,
-- last known current info,
-- last known session list,
-- connection metadata.
+- pending response promises
+- recent remembered events
+- `lastActiveAt`
+- `lastClientContentExecuteing`
+- `lastSessionList`
+- connection metadata such as `connectedAt`
 
-### Session
+The gateway is not a stateless relay. It keeps a runtime-scoped live cache and coordination layer.
 
-A session is the working conversational or execution container inside a runtime.
-Operations like adding prompts or fetching message history are session-targeted.
+## Live state learning
 
-### Workspace
+`ClientContentExecuteing` is the main source of live runtime activity.
+It updates queue cache state and refreshes session, display, and instance-workspace bundles.
 
-Workspace appears as a contextual grouping or directory-level environment associated with runtime execution state.
-The server updates workspace/session associations based on runtime-originated events such as `ClientContentExecuteing`.
+`ListSession` is also routed over WS, but its cached response is mainly a browseable session list. It is not the main source of session and workspace reconstruction.
 
-## WebSocket Runtime Flow
+## MCP layer
 
-### Runtime Connect Flow
+The server serves MCP through the dynamic route `/api/v2/mcp/[surface]`.
 
-1. A runtime client constructs an OSG WebSocket URL.
-2. The client appends `runtimeID` and `host_name` query parameters.
-3. The client connects to `ws://<host>:4088/api/v2/wsport`.
-4. The server creates or registers a queue for that runtime.
-5. The connection is treated as fully established only after a `connected` acknowledgment is received.
+Important implications:
 
-This explicit acknowledgment matters because it separates transport-level connection success from OSG-level runtime registration success.
+- surfaces are plugin-backed, not hardcoded route files
+- `GET /api/v2/mcp/<surface>` returns the surface info payload
+- `POST /api/v2/mcp/<surface>` handles JSON-RPC requests
+- unknown surfaces return `404`
 
-## Event Envelope Model
-
-The shared envelope shape is effectively:
-
-```json
-{
-  "type": "SomeEvent",
-  "requestID": "req_xxx",
-  "data": { ... }
-}
-```
-
-Responses to events use an `event_response` shape carrying:
-
-- `requestID`
-- `ok`
-- `data`
-
-This enables request/response behavior over WebSocket while keeping event naming explicit.
-
-## Server-Side Queue Behavior
-
-For each connected runtime, the server keeps a queue-like state object that includes:
-
-- the active WebSocket object,
-- sequence-based request ID generation,
-- pending response promises and timeouts,
-- remembered recent events,
-- summary state like `lastCurrentInfo` and `lastSessionList`.
-
-This means the gateway is not acting as a stateless relay. It is maintaining a runtime-centric state cache and event coordination layer.
-
-## HTTP MCP Layer
-
-The server exposes HTTP endpoints under `/api/v2/mcp/...`.
-Two categories are already visible in the repository:
+Current core surfaces include:
 
 - `runtime_control`
 - `session_bridge`
+- `timer_scheduler`
+- `timer_manager`
 
-At a conceptual level:
+Additional surfaces such as `im_gateway_control` and `im_gateway_chat` appear only when that plugin is loaded.
 
-- `runtime_control` is for runtime/session discovery and control-oriented queries,
-- `session_bridge` is for live session message retrieval and mailbox-style interaction.
+## Integration flow
 
-The Feishu bridge currently uses these HTTP MCP endpoints rather than the raw runtime WebSocket channel.
+### OpenCode side
 
-## Feishu Bridge Data Flow
+`packages/client-opencode-plugin-v2/` acts as a real OSG runtime client.
+It reports activity back to the gateway and handles server-originated WS requests.
 
-### Inbound Flow
+### IM gateway side
 
-1. Feishu sends a webhook event to the bridge.
-2. The bridge parses the incoming text message.
-3. The bridge checks local state to avoid duplicate processing.
-4. The bridge resolves a mapping from Feishu `chatId` to `runtimeID + sessionID`.
-5. The bridge calls OSG via HTTP MCP to send a user message to the mapped session, with optional per-turn system context.
+`plugins/IM-gateway/` handles inbound provider traffic, resolves a route and `sessionBindingID`, and calls `osg.addPrompt({ msg, system? })` for the bound OSG session.
 
-### Outbound Flow
+Outbound IM replies do not come from polling OSG for session output anymore. They are sent through IM gateway chat tools such as `SendRouteTextMessage`, `RequestUpload`, and `SendRouteUpload`. Provider polling remains a provider sync and fallback path.
 
-1. The bridge periodically polls OSG for session messages.
-2. It fetches recent rows for the mapped runtime/session.
-3. It filters for roles currently considered forwardable:
-   - `assistant`
-   - `tool`
-   - `system`
-4. It fingerprints message content to avoid duplicate sends.
-5. It posts the resulting text back to Feishu.
+## Monitor flow
 
-Outbound forwarding still uses polling. That outbound role filtering is separate from inbound `AddPrompt` semantics, which now treat `msg` as the user message plus optional per-turn `system` context.
-
-## Open Questions for Later Documentation
-
-The current implementation already reveals the general architecture, but some areas still need deeper reading before documenting as settled behavior:
-
-- exact MCP tool definitions and argument names,
-- how runtime persistence is modeled beyond in-memory queue state,
-- how workspace and session registries are initialized and reconciled,
-- whether there are multiple intended runtime classes or transport variants.
+The gateway produces SSE from `/api/monitor/stream`.
+`web/` rewrites `/api/*` to the gateway origin and consumes that stream from the browser.

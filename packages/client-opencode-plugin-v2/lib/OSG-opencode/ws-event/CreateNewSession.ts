@@ -41,84 +41,10 @@ function value<T>(raw: T | { data?: T } | null | undefined): T | null {
   return raw as T
 }
 
-function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms))
-}
-
-function readPromptError(raw: unknown): string {
-  if (!raw || typeof raw !== "object") return ""
-  const src = raw as Record<string, unknown>
-  const info = src.info && typeof src.info === "object" ? (src.info as Record<string, unknown>) : null
-  const error = info?.error && typeof info.error === "object" ? (info.error as Record<string, unknown>) : null
-  const name = typeof error?.name === "string" ? error.name.trim() : ""
-  const data = error?.data && typeof error.data === "object" ? (error.data as Record<string, unknown>) : null
-  const message = typeof data?.message === "string" ? data.message.trim() : ""
-  if (name && message) return `${name}: ${message}`
-  return message || name
-}
-
-function readSessionStatus(raw: unknown, sessionID: string): { type: string; message: string } {
-  const src = value(raw)
-  if (!src || typeof src !== "object") return { type: "", message: "" }
-  const row = (src as Record<string, unknown>)[sessionID]
-  if (!row || typeof row !== "object") return { type: "", message: "" }
-  const status = row as Record<string, unknown>
-  return {
-    type: typeof status.type === "string" ? status.type.trim() : "",
-    message: typeof status.message === "string" ? status.message.trim() : "",
-  }
-}
-
-function readAssistantResult(raw: unknown, sessionID: string): { started: boolean; error: string } {
-  const src = value(raw)
-  if (!Array.isArray(src)) return { started: false, error: "" }
-  for (const item of src) {
-    if (!item || typeof item !== "object") continue
-    const row = item as Record<string, unknown>
-    const info = row.info && typeof row.info === "object" ? (row.info as Record<string, unknown>) : null
-    if (!info) continue
-    const role = typeof info.role === "string" ? info.role.trim() : ""
-    const replySessionID = typeof info.sessionID === "string" ? info.sessionID.trim() : ""
-    if (role !== "assistant" || replySessionID !== sessionID) continue
-    return {
-      started: true,
-      error: readPromptError({ info }),
-    }
-  }
-  return { started: false, error: "" }
-}
-
-async function waitForExecutionStart(ctx: any, sessionID: string, instanceWorkspaceDirectory: string): Promise<{ ok: boolean; error?: string }> {
-  const deadline = Date.now() + 8000
-  while (Date.now() < deadline) {
-    const statusResult = await ctx?.client?.session?.status?.({
-      query: { directory: instanceWorkspaceDirectory },
-    }).catch(() => null)
-    const status = readSessionStatus(statusResult, sessionID)
-    if (status.type === "busy") {
-      return { ok: true }
-    }
-    if (status.type === "retry") {
-      return { ok: false, error: status.message || "session entered retry state" }
-    }
-
-    const messagesResult = await ctx?.client?.session?.messages?.({
-      path: { id: sessionID },
-      query: { directory: instanceWorkspaceDirectory, limit: 8 },
-    }).catch(() => null)
-    const assistant = readAssistantResult(messagesResult, sessionID)
-    if (assistant.started) {
-      return assistant.error ? { ok: false, error: assistant.error } : { ok: true }
-    }
-
-    await sleep(150)
-  }
-  return { ok: false, error: "session did not start executing in time" }
-}
-
 export async function handleCreateNewSession(
   ctx: any,
   payload: Record<string, unknown>,
+  waitForSessionExecutionStart: (sessionID: string) => Promise<{ ok: boolean; error?: string }>,
 ): Promise<Record<string, unknown>> {
   const req = createNewSessionRequest(payload);
   if (!req.instanceWorkspaceDirectory) return { ok: false, sessionID: "", content: req.content, error: "instanceWorkspaceDirectory is required" };
@@ -170,7 +96,7 @@ export async function handleCreateNewSession(
     }
   }
 
-  const execution = await waitForExecutionStart(ctx, sessionID, req.instanceWorkspaceDirectory)
+  const execution = await waitForSessionExecutionStart(sessionID)
   if (!execution.ok) {
     return {
       ok: false,

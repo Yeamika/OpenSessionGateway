@@ -1,100 +1,77 @@
-# OSG Runtime, Session, and Workspace Model
+# OSG Runtime, Session, Instance Workspace, and Display Model
 
 ## Overview
 
-The current OSG implementation uses three core domain objects:
+The current OSG live model revolves around four related objects:
 
 - runtime
 - session
-- workspace
+- instance workspace
+- display
 
-These are tracked separately but linked together through server-side registries.
+They are tracked in separate registries and linked together through `runtimeID`.
 
 ## Runtime
 
 Runtime is the top-level connected execution identity.
-A runtime bundle is created and stored in a global in-memory registry keyed by `runtimeID`.
+The runtime bundle is keyed by `runtimeID` and stores the live WS bridge state for that runtime.
 
-Current runtime-related responsibilities include:
+Important runtime behavior:
 
-- WebSocket bridge connectivity state,
-- identity and host tracking,
-- caller-to-runtime binding,
-- coordination with session and workspace registries.
-
-When a runtime is removed, associated sessions and workspaces are also cleared.
+- `runtimeID` is the root routing key
+- disconnect marks the runtime `offline`
+- disconnect does not automatically clear cached session, instance-workspace, or display bundles
+- explicit `removeRuntimeBundle()` is the path that clears those child bundles
 
 ## Session
 
-Sessions are stored in a separate global in-memory registry keyed by:
+Session bundles are keyed by `runtimeID::sessionID`.
+They currently track:
 
-`runtimeID::sessionID`
+- `displayID`
+- `title`
+- `status`
+- `lastActiveTime`
+- `activeCount`
 
-This means session identity is runtime-scoped in the registry layer, even if some search helpers can look up by bare `sessionID`.
+Session activity is mainly learned from `ClientContentExecuteing`.
+There is no first-class session-to-workspace field on the session bundle today.
 
-Current session registry behavior includes:
+## Instance workspace
 
-- create-on-demand bundle creation,
-- listing all sessions for a runtime,
-- listing sessions under a workspace,
-- locating a session bundle by `sessionID`,
-- clearing all sessions for a disconnected runtime.
+Instance-workspace bundles are keyed by `runtimeID::instanceWorkspaceDirectory`.
+They store:
 
-This strongly suggests that a session belongs to exactly one runtime at a time.
+- `instanceWorkspaceDirectory`
+- `title`
+- MCP caller-binding state
 
-## Workspace
+The current WS event handler writes the directory as the title, so title often mirrors the directory path.
 
-Workspaces are stored in another global in-memory registry keyed by:
+## Display
 
-`runtimeID::workspaceID`
+Display bundles are keyed by `runtimeID::displayID`.
+They are tracked separately from sessions and instance workspaces and are updated from runtime activity events.
 
-A workspace can carry:
+## How associations are learned
 
-- runtime association,
-- directory,
-- title,
-- MCP-related caller bindings.
+`ClientContentExecuteing` is the main learning path for live associations.
+When the server receives it, it can:
 
-The workspace registry also keeps a caller-key-to-runtime map used during MCP session bridge flows.
+- ensure the instance-workspace bundle exists,
+- ensure the session bundle exists,
+- update the session `displayID`, `title`, `status`, `lastActiveTime`, and `activeCount`,
+- ensure the display bundle exists.
 
-This is an important implementation detail: caller affinity is not just an auth concept; it is part of how runtime routing is remembered.
+The server does not currently persist a direct session-to-instance-workspace pointer in the session bundle.
+That association is inferred from recent runtime activity instead.
 
-## Relationship Between the Three
+## Operational meaning
 
-The current model appears to be:
-
-- a runtime owns many sessions,
-- a runtime owns many workspaces,
-- a session may be associated with a workspace,
-- workspace association can be inferred or hydrated from runtime-reported execution context.
-
-In practice, OSG is using runtime as the root container for both session and workspace state.
-
-## How Associations Are Learned
-
-One important path is the `ClientContentExecuteing` WebSocket event.
-When the server receives this event, it reads payload data such as:
-
-- workspace path
-- session ID
-- session title
-- display ID
-
-From there, the server:
-
-- ensures or finds a workspace bundle,
-- ensures the session bundle exists,
-- associates the session with the workspace when possible.
-
-This means some of OSG's state model is not preconfigured. It is learned dynamically from runtime-originated events.
-
-## Operational Meaning
-
-For maintainers, the practical interpretation is:
+For maintainers, the practical model is:
 
 - runtime is the routing anchor,
-- session is the active conversation/execution unit,
-- workspace is the environment context,
-- registries are currently in-memory and lifecycle-bound to the server process.
-
-That last point matters. The current model is coordination-friendly, but also implies volatility unless additional persistence layers exist elsewhere in the system.
+- session is the active execution unit,
+- instance workspace is the reported directory context,
+- display is the runtime-side UI slot,
+- the whole live graph is mostly process-local and must be rebuilt after restart.

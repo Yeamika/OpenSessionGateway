@@ -1,10 +1,10 @@
 # OSG Server Plugins
 
-This directory stores package-style server plugins.
+This directory stores package-style OSG server plugins.
 
-This is the canonical plugin source tree in this repo. Point the server here with `OSG_PLUGIN_DIRS` if you want to use the repo-shipped plugins.
+It is the canonical repo plugin source tree. When `OSG_PLUGIN_DIRS` is unset, the loader checks this root plus local override roots such as `server/local-plugins/`.
 
-## Recommended Form
+## Recommended form
 
 Each plugin should live in its own folder:
 
@@ -30,69 +30,35 @@ plugins/
 }
 ```
 
-## `index.ts`
+## Runtime model
 
-```ts
-import type { OsgServerPlugin } from "@opensessiongateway/server-plugin-sdk";
+- plugin packages are discovered from configured plugin roots
+- startup autoload uses root allow and deny rules plus package-level `osgServerPlugin.autoload`
+- file-loaded plugin packages run in `worker_threads`
+- load, unload, and reload do not require restarting the main OSG server
 
-const plugin: OsgServerPlugin = {
-  manifest: {
-    id: "example.my-plugin",
-    version: "0.1.0",
-    name: "My Plugin",
-    description: "Adds one MCP surface",
-  },
-  activate(ctx) {
-    ctx.mcp.registerSurface({
-      id: "example.my-plugin.surface",
-      routeSegment: "my_surface",
-      info() {
-        return {
-          ok: true,
-          endpoint: "/api/v2/mcp/my_surface",
-          server: "my_surface",
-          implemented: true,
-          description: "Example package plugin",
-        };
-      },
-      async handleRpc(body) {
-        const id = body && typeof body === "object" ? (body as { id?: unknown }).id ?? null : null;
-        return Response.json({
-          jsonrpc: "2.0",
-          id,
-          result: {
-            content: [{ type: "text", text: JSON.stringify({ ok: true }) }],
-          },
-        });
-      },
-    });
-  },
-};
-
-export default plugin;
-```
+Builtin in-process plugins are also supported by the host API, but this `plugins/` tree is for file-loaded package plugins.
 
 ## Shared SDK
 
-- Source package: `packages/server-plugin-sdk/`
-- Import name: `@opensessiongateway/server-plugin-sdk`
+- source package: `packages/server-plugin-sdk/`
+- import name: `@opensessiongateway/server-plugin-sdk`
 
-## Autoload Behavior
+## Autoload behavior
 
-- Direct child folders are auto-loaded at server startup.
-- Root config file `osg.plugins.json` can define the default autoload allow/deny list.
-- Set `osgServerPlugin.autoload` to `false` in a plugin package to keep it opt-in.
-- Folders starting with `_` are ignored by autoload.
-- The admin page can still load ignored packages manually.
-- `OSG_PLUGIN_AUTOLOAD_ALLOW` limits autoload to named package directories.
-- `OSG_PLUGIN_AUTOLOAD_DENY` skips named package directories.
+- root config file `osg.plugins.json` can define the default autoload allow and deny list
+- `OSG_PLUGIN_AUTOLOAD_ALLOW` takes precedence over file allow lists
+- env and file deny lists are both applied
+- `osgServerPlugin.autoload: false` keeps a package opt-in
+- folders starting with `_` are ignored by autoload
+- `/api/plugins/autoload` can update saved autoload state and immediately load or unload a package when possible
 
 Example root config:
 
 ```json
 {
   "autoload": {
-    "allow": ["IM-bridge", "runtime-control", "session-bridge", "timer-scheduler"]
+    "allow": ["runtime-control", "session-bridge", "timer-scheduler"]
   }
 }
 ```
@@ -101,12 +67,13 @@ Example env override:
 
 ```bash
 OSG_PLUGIN_DIRS=D:\ai\OPENCODE_AUTO\OpenSessionGateway\plugins
-OSG_PLUGIN_AUTOLOAD_ALLOW=IM-bridge,runtime-control,session-bridge,timer-scheduler
+OSG_PLUGIN_AUTOLOAD_ALLOW=runtime-control,session-bridge,timer-scheduler
 ```
 
-## Current Packages
+`IM-gateway` is still loadable, but it ships with `osgServerPlugin.autoload: false`, so it stays opt-in unless that flag changes.
 
-- `IM-bridge/`
+## Current loadable packages
+
 - `IM-gateway/`
 - `runtime-control/`
 - `session-bridge/`

@@ -30,7 +30,7 @@ Ownership map:
 - `web/` -> `web/`
 - `server/` -> `server/`
 - `opencode-plug/` -> `packages/client-opencode-plugin-v2/`, `packages/client-library/`
-- `serverplug-im/` -> `plugins/IM-bridge/`
+- `serverplug-im/` -> `plugins/IM-gateway/`
 - `serverplug-core/` -> `plugins/runtime-control/`, `plugins/session-bridge/`, `plugins/timer-scheduler/`, `packages/server-plugin-sdk/`
 - `opencode-dev/` -> `D:\ai\OPENCODE_AUTO\Yaemio\opencode\packages\opencode\`
 - `opencode-test/` -> `D:\ai\OPENCODE_AUTO\Yaemio\opencode\packages\opencode\`
@@ -38,10 +38,10 @@ Ownership map:
 
 Non-code map:
 
-- `agents/server/.runtime/` -> gateway locks, logs, heap dumps, bridge-state snapshots used by generic server work
+- `agents/server/.runtime/` -> gateway locks, logs, heap dumps, and runtime support files used by generic server work
 - `agents/server/.archive/` -> historical server backups
 - `agents/opencode-plug/.runtime/` -> OpenCode runtime logs and client-template fleet workspaces
-- `agents/serverplug-im/.runtime/` -> IM bridge state and IM bridge workspaces
+- `agents/serverplug-im/.runtime/` -> IM gateway state and IM gateway workspaces
 - `agents/serverplug-im/vendor/` -> third-party IM adapter source snapshots and tarballs
 - `agents/serverplug-core/.runtime/` -> focused gateway runtime area for core plugin work
 - `agents/opencode-global/.opencode/` -> shared OpenCode plugin and custom agent definitions used by attached TUI sessions

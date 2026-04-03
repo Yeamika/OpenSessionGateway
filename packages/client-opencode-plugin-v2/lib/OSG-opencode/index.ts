@@ -21,6 +21,7 @@ export class OSGOpencodeClient {
   private hostNameForMcp: string;
   private readonly currentClientInfo: CurrentClientInfo;
   private lastReportedContentKey: string;
+  private readonly sessionExecutionWaiters: Map<string, Array<{ resolve: (value: { ok: boolean; error?: string }) => void; timeout: ReturnType<typeof setTimeout> }>>;
   readonly inf: {
     GetCurrentClientInfo: () => Promise<Record<string, unknown>>;
     ListSession: (payload?: { list?: number; regex?: string }) => Promise<SessionListResponse>;
@@ -51,6 +52,7 @@ export class OSGOpencodeClient {
     this.hostNameForMcp = "";
     this.currentClientInfo = createInitialCurrentClientInfo(this.ctx?.directory);
     this.lastReportedContentKey = "";
+    this.sessionExecutionWaiters = new Map();
     this.inf = {
       GetCurrentClientInfo: this.GetCurrentClientInfo.bind(this),
       ListSession: this.ListSession.bind(this),
@@ -87,6 +89,7 @@ export class OSGOpencodeClient {
   }
 
   async onEvent(event: any) {
+    this.resolveSessionExecutionWaiters(event)
     const previousCwd = this.currentClientInfo.cwd
     const previousSessionID = this.currentClientInfo.sessionID
     const previousTitle = this.currentClientInfo.sessionTitle
@@ -198,6 +201,86 @@ export class OSGOpencodeClient {
     return this.currentClientInfo.sessionID || ""
   }
 
+  private readEventSessionID(event: unknown): string {
+    const src = event && typeof event === "object" ? (event as Record<string, unknown>) : {}
+    const props = src.properties && typeof src.properties === "object" ? (src.properties as Record<string, unknown>) : {}
+    if (typeof props.sessionID === "string" && props.sessionID.trim()) return props.sessionID.trim()
+    const info = props.info && typeof props.info === "object" ? (props.info as Record<string, unknown>) : {}
+    if (typeof info.id === "string" && info.id.trim()) return info.id.trim()
+    const session = props.session && typeof props.session === "object" ? (props.session as Record<string, unknown>) : {}
+    if (typeof session.id === "string" && session.id.trim()) return session.id.trim()
+    return ""
+  }
+
+  private settleSessionExecutionWaiters(sessionID: string, result: { ok: boolean; error?: string }) {
+    const cleanSessionID = typeof sessionID === "string" ? sessionID.trim() : ""
+    if (!cleanSessionID) return
+    const waiters = this.sessionExecutionWaiters.get(cleanSessionID)
+    if (!waiters || waiters.length === 0) return
+    this.sessionExecutionWaiters.delete(cleanSessionID)
+    for (const item of waiters) {
+      clearTimeout(item.timeout)
+      item.resolve(result)
+    }
+  }
+
+  private resolveSessionExecutionWaiters(event: unknown) {
+    const src = event && typeof event === "object" ? (event as Record<string, unknown>) : {}
+    const type = typeof src.type === "string" ? src.type.trim() : ""
+    const sessionID = this.readEventSessionID(src)
+    if (!type || !sessionID) return
+    const props = src.properties && typeof src.properties === "object" ? (src.properties as Record<string, unknown>) : {}
+    if (type === "session.status") {
+      const status = props.status && typeof props.status === "object" ? (props.status as Record<string, unknown>) : {}
+      const statusType = typeof status.type === "string" ? status.type.trim() : ""
+      if (statusType === "busy") {
+        this.settleSessionExecutionWaiters(sessionID, { ok: true })
+        return
+      }
+      if (statusType === "retry") {
+        const message = typeof status.message === "string" ? status.message.trim() : ""
+        this.settleSessionExecutionWaiters(sessionID, { ok: false, error: message || "session entered retry state" })
+        return
+      }
+      if (statusType === "idle") {
+        this.settleSessionExecutionWaiters(sessionID, { ok: true })
+        return
+      }
+    }
+    if (type === "permission.asked") {
+      this.settleSessionExecutionWaiters(sessionID, { ok: true })
+      return
+    }
+    if (type === "session.error") {
+      const error = props.error && typeof props.error === "object" ? (props.error as Record<string, unknown>) : {}
+      const data = error.data && typeof error.data === "object" ? (error.data as Record<string, unknown>) : {}
+      const name = typeof error.name === "string" ? error.name.trim() : ""
+      const message = typeof data.message === "string" ? data.message.trim() : ""
+      this.settleSessionExecutionWaiters(sessionID, { ok: false, error: message || name || "session error" })
+      return
+    }
+    if (type === "session.idle") {
+      this.settleSessionExecutionWaiters(sessionID, { ok: true })
+    }
+  }
+
+  async WaitForSessionExecutionStart(sessionID: string): Promise<{ ok: boolean; error?: string }> {
+    const cleanSessionID = typeof sessionID === "string" ? sessionID.trim() : ""
+    if (!cleanSessionID) return { ok: false, error: "sessionID is required" }
+    return new Promise((resolve) => {
+      const timeout = setTimeout(() => {
+        const rows = this.sessionExecutionWaiters.get(cleanSessionID) || []
+        const next = rows.filter((item) => item.timeout !== timeout)
+        if (next.length > 0) this.sessionExecutionWaiters.set(cleanSessionID, next)
+        else this.sessionExecutionWaiters.delete(cleanSessionID)
+        resolve({ ok: false, error: "session did not start executing in time" })
+      }, 8000)
+      const rows = this.sessionExecutionWaiters.get(cleanSessionID) || []
+      rows.push({ resolve, timeout })
+      this.sessionExecutionWaiters.set(cleanSessionID, rows)
+    })
+  }
+
   reportClientContentExecuteing(input: {
     displayID?: string
     instanceWorkspaceDirectory?: string
@@ -248,6 +331,7 @@ export class OSGOpencodeClient {
       query: this.query,
       writeLog: this.writeLog,
       GetCurrentClientInfo: () => this.GetCurrentClientInfo(),
+      WaitForSessionExecutionStart: (sessionID: string) => this.WaitForSessionExecutionStart(sessionID),
       ListSession: (payload?: { list?: number; regex?: string }) => this.ListSession(payload),
       RequestInstanceWorkspaceReload: (payload?: { instanceWorkspaceDirectory?: string; title?: string }) => this.RequestInstanceWorkspaceReload(payload),
       resolveInstanceWorkspaceInfo: () => this.resolveInstanceWorkspaceInfo(),
@@ -260,6 +344,7 @@ export class OSGOpencodeClient {
       query: this.query,
       writeLog: this.writeLog,
       GetCurrentClientInfo: () => this.GetCurrentClientInfo(),
+      WaitForSessionExecutionStart: (sessionID: string) => this.WaitForSessionExecutionStart(sessionID),
       ListSession: (payload?: { list?: number; regex?: string }) => this.ListSession(payload),
       RequestInstanceWorkspaceReload: (payload?: { instanceWorkspaceDirectory?: string; title?: string }) => this.RequestInstanceWorkspaceReload(payload),
       resolveInstanceWorkspaceInfo: () => this.resolveInstanceWorkspaceInfo(),
@@ -275,6 +360,9 @@ export class OSGOpencodeClient {
   }
 
   stop() {
+    for (const [sessionID] of this.sessionExecutionWaiters) {
+      this.settleSessionExecutionWaiters(sessionID, { ok: false, error: "client stopped" })
+    }
     OsgManager.unregister(this.key())
   }
 

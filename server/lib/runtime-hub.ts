@@ -3,14 +3,12 @@ import { ensureRuntimeBundle, getRuntimeBundle } from "@/lib/ClientModel/registr
 export type { RuntimeBundle } from "@/lib/ClientModel/model";
 
 export {
-  bindCallerToRuntime,
   ensureRuntimeBundle,
   getRuntimeBundle,
   isRuntimeOnlineInHub,
   listRuntimeBundles,
   markRuntimeBundleDisconnected,
   removeRuntimeBundle,
-  resolveRuntimeByCaller,
 } from "@/lib/ClientModel/registry";
 
 export { ensureRuntimeSessionBundle, getRuntimeSessionBundle } from "@/lib/ClientModel/session/registry";

@@ -1,70 +1,48 @@
 # Current Observations and Risks
 
-## 1. Naming Inconsistency
+## 1. Naming inconsistency still matters
 
-The codebase currently includes several inconsistent or misspelled identifiers, for example:
+Historical identifiers such as `AddPromot`, `ClientContentExecuteing`, and `protocol-library` are still active in code.
+The main risk is documentation or migration notes silently using corrected English while code search still depends on the old names.
 
-- `AddPromot`
-- `ClientContentExecuteing`
-- `protocol-library`
-- README text referring to `sever/`
+## 2. MCP surfaces are dynamic, not fixed
 
-This creates risk in several areas:
+The gateway serves MCP through `/api/v2/mcp/[surface]`.
+Surface availability depends on which plugins are currently autoloaded or loaded at runtime.
 
-- documentation drift,
-- onboarding confusion,
-- accidental API mismatches,
-- searchability problems.
+Docs should not imply that every surface is always present.
 
-## 2. Documentation Gaps
+## 3. Live state is mostly in memory
 
-Package-level README files exist, but system-level documentation is still thin.
-There is not yet a single canonical explanation of:
+Runtime, session, instance-workspace, display, permission, WS queue, and plugin-storage state is mostly process-local memory.
+Disconnect keeps cached bundles and marks runtimes `offline`, while full server restart drops that live state.
 
-- the architecture,
-- the layering model,
-- the runtime/session/workspace relationship,
-- the intended responsibility of bridge packages.
+Docs and operator notes need to distinguish:
 
-## 3. Bridge Default Mapping Behavior
+- disconnect behavior,
+- reconnect behavior,
+- restart behavior.
 
-The Feishu bridge currently appears to auto-select a default runtime/session mapping if none is configured.
-This is useful for MVP setup, but risky when:
+## 4. Server and web monitor contracts currently drift
 
-- multiple runtimes are online,
-- multiple chats are active,
-- users assume deterministic routing.
+The gateway stream is produced from `server/lib/frontend/monitor-contract.ts`, but `web/` consumes a different contract in `web/lib/monitor-contract.ts`.
+Current drift includes:
 
-This behavior needs very explicit documentation.
+- server `instanceWorkspaceDirectory` vs web `workspace`
+- server runtime status `online | offline` vs web `online | stale | offline`
 
-## 4. Polling-Based Outbound Bridge
+Frontend docs should call this out instead of describing the contracts as already unified.
 
-The Feishu bridge currently polls OSG for outbound session messages.
-Potential implications:
+## 5. IM gateway routing depends on explicit bindings
 
-- repeated fetch load,
-- delayed delivery,
-- duplicate prevention complexity,
-- ordering edge cases.
+Current IM gateway routing is built around routes and `sessionBindingID`, not around implicit default runtime or session guessing.
+The main risk is stale, missing, or misconfigured bindings, especially when inbound provider traffic continues after runtime topology changes.
 
-This is not necessarily wrong, but it should be documented as an intentional implementation tradeoff.
+## 6. AddPrompt semantics are narrower now
 
-## 5. Mixed Gateway Role
+`AddPrompt` now means: send a user message to one session, with optional `model` and per-turn `system` context.
+Old role-based prompt injection assumptions should not keep leaking into new docs.
 
-The OSG server appears to be both:
+## 7. Documentation should follow current code paths
 
-- a transport gateway,
-- and an in-memory runtime state coordinator.
-
-This is important because maintainers may otherwise assume the server is a thin relay when it is actually storing and interpreting runtime state.
-
-## 6. Early Maintenance Recommendation
-
-Before major refactors, documentation should first stabilize around:
-
-- current terms,
-- actual message flow,
-- endpoint roles,
-- runtime/session ownership boundaries.
-
-That will reduce future breakage caused by unclear assumptions.
+The highest-value maintenance habit is simple: describe current behavior first, then call out historical names or planned follow-up separately.

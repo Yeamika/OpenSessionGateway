@@ -84,6 +84,22 @@ async function readRootAutoloadConfig(root: string): Promise<RootAutoloadConfig>
   }
 }
 
+function resolvePackageEnabled(input: {
+  hidden: boolean;
+  packageName: string;
+  config: RootAutoloadConfig;
+  envAllow: Set<string>;
+  envDeny: Set<string>;
+}): boolean {
+  if (input.hidden) return false;
+  const usesAllow = input.envAllow.size > 0 || input.config.hasAllowList;
+  const allow = input.envAllow.size > 0 ? input.envAllow : input.config.allow;
+  const deny = new Set([...input.config.deny, ...input.envDeny]);
+  if (deny.has(input.packageName)) return false;
+  if (usesAllow) return allow.has(input.packageName);
+  return true;
+}
+
 function isAutoloadCandidate(name: string, config: RootAutoloadConfig): boolean {
   const clean = name.trim();
   if (!clean) return false;
@@ -104,7 +120,6 @@ export type PluginAutoloadPackage = {
   packageName: string;
   packagePath: string;
   hidden: boolean;
-  packageAutoload: boolean;
   enabled: boolean;
   envControlled: boolean;
 };
@@ -171,18 +186,19 @@ export async function listPluginAutoloadRoots(): Promise<PluginAutoloadRoot[]> {
       if (!packageName) continue;
       const packagePath = path.join(root, row.name);
       const hidden = packageName.startsWith(".") || packageName.startsWith("_");
-      const packageAutoload = await packageAllowsAutoload(packagePath);
-      const usesAllow = envConfig.allow.size > 0 || config.hasAllowList;
-      const allow = envConfig.allow.size > 0 ? envConfig.allow : config.allow;
-      const deny = new Set([...config.deny, ...envConfig.deny]);
-      const enabled = !hidden && packageAutoload && (!usesAllow || allow.has(packageName)) && !deny.has(packageName);
+      const enabled = resolvePackageEnabled({
+        hidden,
+        packageName,
+        config,
+        envAllow: envConfig.allow,
+        envDeny: envConfig.deny,
+      });
       packages.push({
         rootPath: root,
         configPath: config.configPath,
         packageName,
         packagePath,
         hidden,
-        packageAutoload,
         enabled,
         envControlled: envConfig.allow.size > 0 || envConfig.deny.size > 0,
       });
@@ -221,14 +237,10 @@ export async function setPluginAutoloadState(rootPath: string, packageName: stri
 
   const config = await readRootAutoloadConfig(root);
   if (enabled) {
-    if (config.hasAllowList) {
-      config.allow.add(cleanName);
-    }
+    config.allow.add(cleanName);
     config.deny.delete(cleanName);
   } else {
-    if (config.hasAllowList) {
-      config.allow.delete(cleanName);
-    }
+    config.allow.delete(cleanName);
     config.deny.add(cleanName);
     config.hasDenyList = true;
   }
@@ -299,40 +311,28 @@ export async function applyPluginAutoloadConfig(): Promise<PluginAutoloadApplyRe
   };
 }
 
-async function packageAllowsAutoload(directoryPath: string): Promise<boolean> {
-  const packageJsonPath = path.join(directoryPath, "package.json");
-  try {
-    const text = await fs.readFile(packageJsonPath, "utf8");
-    const parsed = JSON.parse(text) as {
-      osgServerPlugin?: { autoload?: unknown };
-    };
-    if (!parsed.osgServerPlugin || typeof parsed.osgServerPlugin !== "object") {
-      return true;
-    }
-    return parsed.osgServerPlugin.autoload !== false;
-  } catch (error) {
-    if (error instanceof Error && (error as NodeJS.ErrnoException).code === "ENOENT") {
-      return true;
-    }
-    throw error;
-  }
-}
-
 async function listAutoloadEntries(root: string): Promise<string[]> {
   try {
     const config = await readRootAutoloadConfig(root);
+    const envConfig = envAutoloadConfig();
     const rows = await fs.readdir(root, { withFileTypes: true });
-    const candidates = rows
+    const candidates = await Promise.all(rows
       .filter((row) => row.isDirectory() && isAutoloadCandidate(row.name, config))
-      .map((row) => path.join(root, row.name));
+      .map(async (row) => {
+        const packageName = row.name.trim();
+        const packagePath = path.join(root, row.name);
+        const hidden = packageName.startsWith(".") || packageName.startsWith("_");
+        const enabled = resolvePackageEnabled({
+          hidden,
+          packageName,
+          config,
+          envAllow: envConfig.allow,
+          envDeny: envConfig.deny,
+        });
+        return enabled ? packagePath : null;
+      }));
 
-    const allowed: string[] = [];
-    for (const candidate of candidates.sort((a, b) => a.localeCompare(b))) {
-      if (await packageAllowsAutoload(candidate)) {
-        allowed.push(candidate);
-      }
-    }
-    return allowed;
+    return candidates.filter((item): item is string => Boolean(item)).sort((a, b) => a.localeCompare(b));
   } catch (error) {
     if (error instanceof Error && (error as NodeJS.ErrnoException).code === "ENOENT") {
       return [];

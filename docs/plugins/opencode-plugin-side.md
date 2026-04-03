@@ -2,22 +2,22 @@
 
 ## What this covers
 
-This document is about the OSG-facing plugin side inside `packages/client-opencode-plugin-v2/`.
-That is the side whose job is to connect an OpenCode environment to OSG as a runtime-capable client.
+Covers the OSG adapter in `packages/client-opencode-plugin-v2/`.
+That package connects an OpenCode environment to OSG as a runtime-capable client.
 
 This is not the same thing as the OSG server, and it is not automatically the same thing as every modified OpenCode fork.
 
 ## Intended role
 
-From current repo structure and earlier draft notes, `packages/client-opencode-plugin-v2/` appears to be responsible for:
+`packages/client-opencode-plugin-v2/` is the OSG adapter layer that makes an OpenCode environment participate in the OSG runtime and session model.
 
-- creating or configuring an OSG client connection,
+Its current responsibilities include:
+
+- creating and starting an OSG client connection,
 - registering a runtime with the OSG server,
-- wiring tool or hook integration into the host OpenCode environment,
-- reacting to server-originated requests/events,
-- and cleaning up on shutdown.
-
-In other words: this package looks like the OSG adapter layer that makes OpenCode participate in the OSG runtime/session model.
+- reporting runtime and session activity back to OSG,
+- reacting to server-originated WS requests and events,
+- cleaning up on shutdown.
 
 ## Maintenance questions to ask
 
@@ -34,8 +34,13 @@ The plugin side should be understood mainly as responsible for:
 
 - **connection lifecycle**: connect, acknowledge, reconnect, shutdown,
 - **runtime identity**: `runtimeID`, host naming, and registration expectations,
-- **event handling**: whether server-emitted requests such as prompt/session operations are actually implemented,
-- **state reporting**: whether it emits enough runtime/session/workspace information for the server to build a useful live model.
+- **event handling**: whether server-emitted requests such as `AddPromot`, `CreateNewSession`, `GetSessionMsg`, `SetClientDisplaySession`, `AbortSessionOfClient`, `RequestRuntime`, `ServerToast`, and permission flows are implemented,
+- **state reporting**: whether it emits enough runtime/session/instance-workspace information for the server to build a useful live model.
+
+## Current limitation
+
+The exported local tool factory currently returns an empty object.
+That means the package's current value is mostly in WS lifecycle, state reporting, and request handling rather than in a large local tool surface.
 
 ## Important maintenance risks
 

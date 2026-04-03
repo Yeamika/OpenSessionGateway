@@ -22,6 +22,7 @@ export type ManagerInstance = {
   query: () => Record<string, unknown>
   writeLog: WriteLog
   GetCurrentClientInfo: () => Promise<Record<string, unknown>>
+  WaitForSessionExecutionStart: (sessionID: string) => Promise<{ ok: boolean; error?: string }>
   ListSession: (payload?: { list?: number; regex?: string }) => Promise<any>
   RequestInstanceWorkspaceReload: (payload?: { instanceWorkspaceDirectory?: string; title?: string }) => Promise<Record<string, unknown>>
   resolveInstanceWorkspaceInfo: () => { instanceWorkspaceDirectory: string; title: string } | null
@@ -348,6 +349,7 @@ export const OsgManager = {
                 query: item.query,
                 runtimeID: state.runtimeID,
                 GetCurrentClientInfo: () => item.GetCurrentClientInfo(),
+                WaitForSessionExecutionStart: (sessionID: string) => item.WaitForSessionExecutionStart(sessionID),
                 ListSession: (payload?: { list?: number; regex?: string }) => item.ListSession(payload),
                 RequestInstanceWorkspaceReload: (payload?: { instanceWorkspaceDirectory?: string; title?: string }) => item.RequestInstanceWorkspaceReload(payload),
                 resolveInstanceWorkspaceInfo: () => item.resolveInstanceWorkspaceInfo(),

@@ -462,16 +462,17 @@ async function run() {
     if (runDefaultSuite) {
       await step("runtime_control tools list", async () => {
         const tools = await rpcToolsList(runtimeControlUrl);
-        assert(tools.includes("ListClients"), "runtime_control missing ListClients");
+        assert(tools.includes("ListRuntime"), "runtime_control missing ListRuntime");
         assert(tools.includes("CreateNewSession"), "runtime_control missing CreateNewSession");
         assert(tools.includes("AddPrompt"), "runtime_control missing AddPrompt");
         assert(tools.includes("ReloadClientInstanceWorkspace"), "runtime_control missing ReloadClientInstanceWorkspace");
+        assert(tools.includes("ListRuntimeAvailableModels"), "runtime_control missing ListRuntimeAvailableModels");
       });
 
-      await step("runtime visible in ListClients", async () => {
+      await step("runtime visible in ListRuntime", async () => {
         await withRetry(
-          "ListClients",
-          () => rpcToolCall(runtimeControlUrl, "ListClients", { list: 200 }),
+          "ListRuntime",
+          () => rpcToolCall(runtimeControlUrl, "ListRuntime", { list: 200 }),
           (payload) => {
             const list = Array.isArray(payload.list) ? payload.list : [];
             return list.some((item) => item && typeof item === "object" && (item as Record<string, unknown>).runtimeID === runtimeID);
@@ -561,15 +562,15 @@ async function run() {
         assert(payload.reloaded === true, `ReloadClientInstanceWorkspace did not report reloaded=true: ${JSON.stringify(payload)}`);
       });
 
-      await step("ListClientSessions includes created session", async () => {
-        const payload = await rpcToolCall(runtimeControlUrl, "ListClientSessions", {
+      await step("ListActivedSessions includes created session", async () => {
+        const payload = await rpcToolCall(runtimeControlUrl, "ListActivedSessions", {
           runtimeID,
           list: 50,
           regex: createdSessionID,
         });
         const list = Array.isArray(payload.list) ? payload.list : [];
         const matched = list.some((item) => item && typeof item === "object" && (item as Record<string, unknown>).id === createdSessionID);
-        assert(matched, `ListClientSessions missing ${createdSessionID}: ${JSON.stringify(payload)}`);
+        assert(matched, `ListActivedSessions missing ${createdSessionID}: ${JSON.stringify(payload)}`);
       });
     }
 

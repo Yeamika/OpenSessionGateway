@@ -2,168 +2,148 @@
 
 ## Why This Exists
 
-OpenSessionGateway currently mixes protocol definitions, live runtime coordination, MCP control surfaces, and bridge integrations.
-That makes local changes deceptively easy and architectural regressions deceptively likely.
-
-This note captures the current maintenance traps that seem most important from code inspection.
+OpenSessionGateway mixes protocol definitions, live runtime coordination, plugin-backed MCP surfaces, and integration plugins.
+That makes local changes easy to ship and easy to misunderstand.
 
 ## Major Pitfalls
 
-### 1. Mistaking protocol presence for full implementation
+### 1. Mistaking protocol presence for end-to-end support
 
-Several protocol/event names and request handlers already exist, but not every client implementation appears equally complete.
+Some protocol names are defined in `protocol-library`, routed by `server/`, and implemented by real clients. Others are only partially validated.
 
-Examples observed in current code:
+Current high-value examples to check explicitly:
 
-- `AddPromot`
-- `ListSession`
-- `SetClientDisplaySession`
+- `ClientContentExecuteing`
+- `AddPromot` / MCP `AddPrompt`
+- `CreateNewSession`
 - `GetSessionMsg`
-- `RequestCurrentInfo`
-
-Maintenance risk:
-
-- a maintainer sees a defined event or helper and assumes the whole path is production-ready,
-- docs accidentally describe protocol capability as guaranteed behavior,
-- bridge code is written against optimistic assumptions instead of verified runtime behavior.
+- `SetClientDisplaySession`
+- `RequestRuntime`
+- permission events and resolve flows
 
 Checklist:
 
-- confirm whether the path is only defined in `protocol-library`,
-- confirm whether `server/` actually routes it,
-- confirm whether at least one real client implementation performs the expected behavior,
-- document partial implementation explicitly.
+- confirm the protocol definition,
+- confirm the server routing path,
+- confirm at least one client implementation,
+- document gaps instead of assuming success.
 
-### 2. Treating the server as a thin stateless gateway
+### 2. Treating the server as stateless
 
-The server is not just forwarding MCP calls and WebSocket packets.
-It also owns live runtime/session/workspace interpretation through in-memory registries.
-
-Maintenance risk:
-
-- refactors break runtime/session/workspace reconstruction,
-- UI and MCP tools drift apart from the live state model,
-- restart/disconnect behavior is misunderstood.
+The server is not just forwarding MCP calls and WS packets.
+It reconstructs live runtime, session, instance-workspace, display, and permission state in memory.
 
 Checklist:
 
-- inspect `server/lib/ClientModel/` and `server/lib/runtime-hub.ts` before changing routing logic,
-- check how a change affects `runtimeID`, `sessionID`, and `workspaceID` relationships,
-- verify whether a state is durable, cached, or purely in-memory.
+- inspect `server/lib/ClientModel/` and `server/lib/runtime-hub.ts` before changing routing,
+- check how a change affects `runtimeID`, `sessionID`, `displayID`, and `instanceWorkspaceDirectory`,
+- verify whether a state is durable, cached, or purely in memory.
 
-### 3. Confusing durable state with live derived state
+### 3. Confusing live state with durable state
 
-Current inspection suggests a split across:
+Current verified persistence looks like this:
 
-- PostgreSQL / Prisma metadata,
-- Redis utility/shared runtime dependency,
-- in-memory runtime/session/workspace/mailbox registries.
-
-Maintenance risk:
-
-- assuming restart safety where there is none,
-- overpromising durability in docs,
-- introducing bugs by writing to one layer while reading from another.
+- live runtime and session graph: in memory
+- mailbox and timer state: plugin storage in memory
+- permissions: in memory
+- Redis: health and pager log paths
+- Prisma client/schema: present, but not the current live runtime-state path
 
 Checklist:
 
-- ask whether the state must survive restart,
-- locate actual write/read paths before calling a state "persistent",
-- document restart behavior whenever touching live registries.
+- locate the actual read and write path before calling a state persistent,
+- document restart behavior whenever you touch live registries,
+- do not imply DB-backed runtime state unless code proves it.
 
 ### 4. Underestimating mailbox behavior
 
-Mailbox is not only a passive unread list.
-Current code indicates mailbox reminders can synthesize prompt-like messages back into sessions.
-
-Maintenance risk:
-
-- breaking reminder behavior while "cleaning up notifications",
-- misunderstanding mailbox as an external-only side channel,
-- hiding a meaningful session injection path from documentation.
+Mailbox is not just an unread list.
+The session-bridge plugin can schedule reminders that send `AddPrompt` messages into sessions and can also show a toast through a separate path.
 
 Checklist:
 
 - inspect both mailbox storage and reminder scheduling,
-- verify whether a change alters prompt injection behavior,
+- verify whether a change alters prompt or toast behavior,
 - document whether a mailbox path is read-only, reply-oriented, or prompt-injecting.
 
-### 5. Flattening control plane and session interaction plane
+### 5. Treating MCP surfaces as static
 
-The codebase currently separates at least two important MCP surfaces:
+The gateway serves MCP from `/api/v2/mcp/[surface]`, and the available surfaces depend on loaded plugins.
+
+Current core surfaces include:
 
 - `runtime_control`
 - `session_bridge`
+- `timer_scheduler`
+- `timer_manager`
 
-They should not be treated as interchangeable.
-
-Maintenance risk:
-
-- session-scoped operations get implemented as runtime-global controls,
-- bridge packages bypass intended boundaries,
-- tool semantics become inconsistent.
+IM gateway surfaces appear only when that plugin is loaded.
 
 Checklist:
 
-- identify whether an operation targets a runtime, a session, or a workspace,
-- keep tool naming and docs aligned with the actual target scope,
-- review both MCP route wiring and WS-side handling before changing semantics.
+- identify whether a surface is always autoloaded or optional,
+- keep docs clear about dynamic availability,
+- review plugin registration as well as route wiring.
 
-### 6. Ignoring disconnect and reconnect cleanup semantics
+### 6. Ignoring disconnect semantics
 
-Current code shows runtime disconnect triggers queue cleanup and registry cleanup.
-That means a disconnect is not just a transport blip; it can erase the server's live graph for that runtime.
-
-Maintenance risk:
-
-- reconnect behavior appears flaky even though cleanup is working as coded,
-- maintainers assume stale state should still be queryable after disconnect,
-- tests miss reconnection edge cases.
+Runtime disconnect cleans the WS queue and marks the runtime offline, but it does not automatically delete cached runtime, session, instance-workspace, or display bundles.
 
 Checklist:
 
-- inspect `cleanupQueue()` behavior before changing connection logic,
-- test disconnect/reconnect scenarios explicitly,
-- document what the server expects clients to resend after reconnect.
+- inspect `cleanupQueue()` before changing connection logic,
+- test disconnect and reconnect flows explicitly,
+- document what remains cached after disconnect and what disappears on full restart.
+
+### 7. Forgetting server and web monitor drift
+
+The server and `web/` currently use different monitor contracts.
+Docs and UI changes need to verify both sides together.
+
+Checklist:
+
+- compare `server/lib/frontend/monitor-contract.ts` and `web/lib/monitor-contract.ts`,
+- check field names and status enums,
+- document current drift instead of assuming a shared schema.
 
 ## Stable Maintenance Order
 
 When touching OSG server behavior, reason in this order:
 
-1. runtime/session/workspace domain model,
+1. runtime and session model,
 2. WS event flow,
-3. MCP control surface,
-4. bridge integration assumptions,
-5. persistence/restart semantics,
-6. UI/admin view consequences.
+3. MCP surface behavior,
+4. plugin integration assumptions,
+5. persistence and restart semantics,
+6. monitor and admin view consequences.
 
 ## Before Editing Server Behavior
 
 Read first:
 
-- `docs/01-project-overview.md`
-- `docs/02-architecture-and-dataflow.md`
-- `docs/05-mcp-endpoints-and-tools.md`
-- `docs/06-runtime-session-workspace-model.md`
-- `docs/07-persistence-and-mailbox-notes.md`
-- `docs/08-server-maintenance-outline.md`
+- `docs/backend/runtime-session-workspace-model.md`
+- `docs/backend/architecture-and-dataflow.md`
+- `docs/backend/mcp-endpoints-and-tools.md`
+- `docs/backend/persistence-and-mailbox-notes.md`
+- `docs/_shared/maintenance-guidance/server-maintenance-outline.md`
 
 Then inspect code in:
 
 - `server/server.ts`
+- `server/app/api/v2/mcp/[surface]/route.ts`
 - `server/lib/v2/ws/`
-- `server/lib/v2/mcp/`
 - `server/lib/ClientModel/`
+- `server/lib/plugins/`
 - `server/lib/runtime-store.ts`
-- bridge packages currently in use
+- the integration plugins currently in use
 
 ## Documentation Rule of Thumb
 
 When uncertain, document one of these explicitly instead of hand-waving:
 
-- "implemented in protocol only"
-- "implemented in server but not fully validated in real client"
-- "current behavior inferred from code inspection"
-- "restart behavior still unclear"
+- implemented in protocol only
+- routed in server, but client validation still partial
+- current behavior inferred from code inspection
+- restart behavior still unclear
 
-That is much better than pretending the system is more settled than it is.
+That is safer than pretending the system is more settled than it is.

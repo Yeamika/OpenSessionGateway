@@ -38,5 +38,11 @@ client.start();
 Connection is treated as successful only after server ack:
 
 ```json
-{"type":"connected","runtimeID":"<same runtimeID>"}
+{
+  "type": "connected",
+  "requestID": "",
+  "data": { "runtimeID": "<same runtimeID>" }
+}
 ```
+
+The reusable client checks `data.runtimeID` against the configured runtime before marking the connection ready.

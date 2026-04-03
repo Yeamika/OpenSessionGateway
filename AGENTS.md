@@ -25,6 +25,25 @@ Shared OpenCode config root:
 
 - Install dependencies once from the repo root so workspaces share the root `node_modules/`.
 - Run runtime, dev, lint, and build commands from `agents/*` wrappers, not from `web/`, `server/`, `packages/`, or `plugins/` directly.
+- Deployment and test execution for OSG surfaces must run inside the project containers, not directly on the host machine.
+- When verifying server, plugin, or runtime behavior, prefer the `docker/osg-opencode-suite/` container flows and treat host-only verification as insufficient unless explicitly requested.
+
+## Container Usage Rule
+
+The following containers are part of the active OSG/OpenCode lab environment:
+
+1. `osg-test`
+2. `opencode-test-community-event`
+3. `developerscontain`
+4. `opencode-test-a`
+5. `opencode-test-b`
+6. `main-osg`
+
+Container handling policy:
+
+- `developerscontain`, `main-osg`, and `opencode-test-community-event` are protected containers. Do not stop, restart, recreate, or modify them unless explicitly instructed.
+- `osg-test`, `opencode-test-a`, and `opencode-test-b` may be used for testing and verification work.
+- When running deployment or validation steps, prefer the test containers first and avoid production containers unless the task explicitly targets production behavior.
 
 ## What To Understand First
 

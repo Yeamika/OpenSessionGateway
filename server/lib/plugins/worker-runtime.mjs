@@ -1,5 +1,6 @@
 import { parentPort, workerData } from "node:worker_threads";
 import { pathToFileURL } from "node:url";
+import { tsImport } from "tsx/esm/api";
 
 if (!parentPort) {
   throw new Error("plugin worker requires parentPort");
@@ -72,7 +73,9 @@ function asPluginDefinition(value) {
 }
 
 async function loadPluginDefinition(absolutePath) {
-  const loaded = await import(pathToFileURL(absolutePath).href);
+  const loaded = /\.(ts|mts|cts)$/i.test(absolutePath)
+    ? await tsImport(absolutePath, import.meta.url)
+    : await import(pathToFileURL(absolutePath).href);
   const candidate = typeof loaded.createPlugin === "function"
     ? await loaded.createPlugin()
     : loaded.default ?? loaded.plugin ?? loaded;
@@ -182,12 +185,6 @@ function createOsgApi() {
     },
     async showToast(payload) {
       await callHost("osg_show_toast", payload && typeof payload === "object" ? payload : {});
-    },
-    async bindCallerToRuntime(callerKey, runtimeID) {
-      await callHost("osg_bind_caller_to_runtime", { callerKey, runtimeID });
-    },
-    async resolveRuntimeByCaller(callerKey) {
-      return callHost("osg_resolve_runtime_by_caller", { callerKey });
     },
   };
 }

@@ -41,10 +41,11 @@ export type GatewayRoute = {
 
 export type GatewayRouteStatus = {
   routeID: string;
-  label: "idle" | "busy" | "error";
+  label: "idle" | "busy" | "error" | "offline" | "missing_session";
   targetMessageID: string;
   reactionID: string;
   reactionEmojiType: string;
+  detail?: string;
   updatedAt: string;
 };
 

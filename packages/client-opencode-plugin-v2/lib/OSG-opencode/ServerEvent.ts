@@ -24,6 +24,7 @@ type ServerEventDeps = {
   query: QueryFactory;
   runtimeID: string;
   GetCurrentClientInfo: () => Promise<Record<string, unknown>>;
+  WaitForSessionExecutionStart: (sessionID: string) => Promise<{ ok: boolean; error?: string }>;
   ListSession: (payload?: { list?: number; regex?: string }) => Promise<SessionListResponse>;
   RequestInstanceWorkspaceReload: (payload?: { instanceWorkspaceDirectory?: string; title?: string }) => Promise<unknown>;
   resolveInstanceWorkspaceInfo: () => { instanceWorkspaceDirectory: string; title: string } | null;
@@ -63,7 +64,7 @@ export async function handleServerEvent(message: unknown, deps: ServerEventDeps)
     listlastusedmodelofsession: async (routePayload) => handleListLastUsedModelOfSession(deps.ctx, deps.query, deps.runtimeID, routePayload),
     getsessionmsg: async (routePayload) => handleGetSessionMsg(deps.ctx, deps.query, deps.runtimeID, routePayload),
     addpromot: async (routePayload) => handleAddPromot(deps.ctx, deps.query, deps.GetCurrentClientInfo, routePayload),
-    createnewsession: async (routePayload) => handleCreateNewSession(deps.ctx, routePayload),
+    createnewsession: async (routePayload) => handleCreateNewSession(deps.ctx, routePayload, deps.WaitForSessionExecutionStart),
     servertoast: async (routePayload) => handleShowToast(deps.ctx, deps.query, routePayload),
     [normalizeType(RESOLVE_PERMISSION_REQUEST_EVENT)]: async (routePayload) => {
       const result = await handleResolvePermissionRequest(deps.ctx, routePayload, deps.resolvePermissionRoute);
