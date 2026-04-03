@@ -1,6 +1,4 @@
-export function renderPluginAdminPage(input: { defaultLoadPath: string }): string {
-  const defaultLoadPath = JSON.stringify(input.defaultLoadPath);
-
+export function renderPluginAdminPage(): string {
   return `<!DOCTYPE html>
 <html lang="en">
   <head>
@@ -113,6 +111,7 @@ export function renderPluginAdminPage(input: { defaultLoadPath: string }): strin
 
       .meta-card .label,
       .roots .label,
+      .root-meta .label,
       .plugin-meta .label {
         display: block;
         margin-bottom: 8px;
@@ -141,6 +140,11 @@ export function renderPluginAdminPage(input: { defaultLoadPath: string }): strin
         border-radius: 14px;
         border: 1px solid var(--line);
         background: rgba(255, 255, 255, 0.72);
+        overflow-wrap: anywhere;
+      }
+
+      .plain-mono {
+        font-family: "IBM Plex Mono", "Cascadia Code", monospace;
         overflow-wrap: anywhere;
       }
 
@@ -264,6 +268,13 @@ export function renderPluginAdminPage(input: { defaultLoadPath: string }): strin
         gap: 6px;
       }
 
+      .plugin-name-row {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px;
+      }
+
       .plugin-title h3 {
         font-size: 18px;
       }
@@ -312,6 +323,35 @@ export function renderPluginAdminPage(input: { defaultLoadPath: string }): strin
         gap: 10px;
       }
 
+      .root-meta {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 12px;
+      }
+
+      .check-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        min-height: 46px;
+        padding: 10px 14px;
+        border-radius: 14px;
+        border: 1px solid var(--line);
+        background: white;
+        font-family: "IBM Plex Mono", "Cascadia Code", monospace;
+      }
+
+      .check-pill input {
+        width: 16px;
+        min-height: 16px;
+        margin: 0;
+        padding: 0;
+      }
+
+      .check-pill.disabled {
+        opacity: 0.55;
+      }
+
       .empty {
         padding: 18px;
         border-radius: 18px;
@@ -344,7 +384,7 @@ export function renderPluginAdminPage(input: { defaultLoadPath: string }): strin
         <span class="eyebrow">127.0.0.1 only</span>
         <h1>OSG Plugin Admin</h1>
         <p>
-          This port manages package-style server plugins. Load a plugin package from an allowed root, then unload or reload it without restarting the main OSG server.
+          This port manages package-style server plugins. Browse recognized packages below, see whether each one is loaded, and control load, unload, reload, or startup autoload from one place.
         </p>
       </section>
 
@@ -362,45 +402,25 @@ export function renderPluginAdminPage(input: { defaultLoadPath: string }): strin
         <div class="panel">
           <div class="panel-head">
             <div>
-              <h2>Autoload Config</h2>
-              <p class="panel-copy">Toggle startup state below, then use Apply And Reload to resync loaded plugins with the saved autoload config.</p>
+              <h2>Plugin Packages</h2>
+              <p class="panel-copy">Every recognized package under the allowed plugin roots is listed here with load state and startup autoload state. Use Load for one-off activation, or toggle autoload for startup behavior.</p>
             </div>
             <div class="plugin-actions">
               <button id="apply-autoload-button" class="secondary" type="button">Apply And Reload</button>
             </div>
           </div>
-          <div id="autoload-roots" class="autoload-roots"></div>
-        </div>
-
-        <div class="panel">
-          <h2>Load Plugin Package</h2>
-          <form id="load-form" class="load-form">
-            <input id="plugin-path" type="text" spellcheck="false" />
-            <button id="load-button" type="submit">Load Package</button>
-          </form>
           <div id="status" class="status"></div>
-        </div>
-
-        <div class="panel">
-          <h2>Loaded Plugins</h2>
-          <div id="plugins" class="plugins"></div>
+          <div id="autoload-roots" class="autoload-roots"></div>
         </div>
       </section>
     </main>
 
     <script>
-      const defaultLoadPath = ${defaultLoadPath};
       const statusNode = document.getElementById('status');
-      const pathInput = document.getElementById('plugin-path');
-      const loadForm = document.getElementById('load-form');
-      const loadButton = document.getElementById('load-button');
       const applyAutoloadButton = document.getElementById('apply-autoload-button');
       const rootsNode = document.getElementById('roots');
       const autoloadRootsNode = document.getElementById('autoload-roots');
-      const pluginsNode = document.getElementById('plugins');
       const metaNode = document.getElementById('meta');
-
-      pathInput.value = defaultLoadPath;
 
       function setStatus(message, tone) {
         statusNode.textContent = message || '';
@@ -464,7 +484,6 @@ export function renderPluginAdminPage(input: { defaultLoadPath: string }): strin
           const packages = (root.packages || []).map((pkg) => {
             const loaded = (plugins || []).find((plugin) => plugin.sourcePath && plugin.sourcePath.indexOf(pkg.packagePath) === 0);
             const badges = [
-              '<span class="badge mono">' + pkg.packageName + '</span>',
               '<span class="badge' + (pkg.enabled ? '' : ' disabled') + '">' + (pkg.enabled ? 'enabled' : 'disabled') + '</span>',
               loaded ? '<span class="badge locked">loaded</span>' : '<span class="badge">not loaded</span>',
             ];
@@ -472,32 +491,44 @@ export function renderPluginAdminPage(input: { defaultLoadPath: string }): strin
             if (pkg.hidden) {
               badges.push('<span class="badge">hidden</span>');
             }
-            if (!pkg.packageAutoload) {
-              badges.push('<span class="badge disabled">package opt-out</span>');
-            }
             if (pkg.envControlled) {
               badges.push('<span class="badge">env override</span>');
             }
 
-            const toggleDisabled = pkg.hidden || !pkg.packageAutoload || pkg.envControlled;
+            const toggleDisabled = pkg.hidden || pkg.envControlled;
+            const packageActionButtons = loaded
+              ? [
+                  '<button class="secondary" data-action="package-reload" data-plugin-id="' + loaded.id + '">Reload</button>',
+                  '<button class="danger" data-action="package-unload" data-plugin-id="' + loaded.id + '">Unload</button>',
+                ].join('')
+              : '<button data-action="package-load" data-package-path="' + pkg.packagePath + '">Load</button>';
+            const autoloadToggle = '<label class="check-pill' + (toggleDisabled ? ' disabled' : '') + '"><input type="checkbox" data-action="autoload-toggle" data-root-path="' + root.rootPath + '" data-package-name="' + pkg.packageName + '" ' + (pkg.enabled ? 'checked ' : '') + (toggleDisabled ? 'disabled ' : '') + '/>Autoload</label>';
             const note = pkg.envControlled
               ? 'Environment variables are currently overriding file-based autoload settings.'
-              : (!pkg.packageAutoload ? 'This package opted out of autoload in its own package.json.' : '');
+              : '';
+            const loadedMeta = loaded
+              ? [
+                  '<div><span class="label">Loaded surfaces</span><div>' + ((loaded.routeSegments || []).length
+                    ? loaded.routeSegments.map((item) => '<span class="surface-chip mono">' + item + '</span>').join('')
+                    : '<span class="surface-chip">No MCP surfaces</span>') + '</div></div>',
+                ].join('')
+              : '<div><span class="label">Loaded surfaces</span><div class="surface-chip">-</div></div>';
 
             return [
               '<article class="autoload-package">',
               '<div class="autoload-package-head">',
               '<div class="plugin-title">',
-              '<h3>' + pkg.packageName + '</h3>',
+              '<div class="plugin-name-row"><h3>' + pkg.packageName + '</h3>' + (loaded ? '<span class="badge mono">' + loaded.id + '</span>' : '') + '</div>',
               '<div class="badge-row">' + badges.join('') + '</div>',
               '</div>',
               '<div class="plugin-actions">',
-              '<button data-action="autoload-toggle" data-root-path="' + root.rootPath + '" data-package-name="' + pkg.packageName + '" data-enabled="' + (pkg.enabled ? 'true' : 'false') + '"' + (toggleDisabled ? ' disabled' : '') + '>' + (pkg.enabled ? 'Disable' : 'Enable') + '</button>',
+              packageActionButtons,
+              autoloadToggle,
               '</div>',
               '</div>',
               '<div class="plugin-meta">',
-              '<div><span class="label">Package path</span><div class="path-chip mono">' + pkg.packagePath + '</div></div>',
-              '<div><span class="label">Config file</span><div class="path-chip mono">' + root.configPath + '</div></div>',
+              '<div><span class="label">Package path</span><div class="plain-mono">' + pkg.packagePath + '</div></div>',
+              loadedMeta,
               '</div>',
               note ? '<p class="plugin-title" style="color: var(--muted);">' + note + '</p>' : '',
               '</article>',
@@ -517,50 +548,11 @@ export function renderPluginAdminPage(input: { defaultLoadPath: string }): strin
             '<h3>' + root.rootPath + '</h3>',
             '<div class="badge-row">' + summaryBadges + '</div>',
             '</div>',
+            '<div class="root-meta">',
+            '<div><span class="label">Config file</span><div class="plain-mono">' + root.configPath + '</div></div>',
+            '</div>',
             '<div class="autoload-packages">' + (packages || '<div class="empty">No plugin packages found in this root.</div>') + '</div>',
             '</section>',
-          ].join('');
-        }).join('');
-      }
-
-      function renderPlugins(plugins) {
-        if (!plugins.length) {
-          pluginsNode.innerHTML = '<div class="empty">No plugins are currently loaded.</div>';
-          return;
-        }
-
-        pluginsNode.innerHTML = plugins.map((plugin) => {
-          const routeSegments = (plugin.routeSegments || []).length
-            ? plugin.routeSegments.map((item) => '<span class="surface-chip mono">' + item + '</span>').join('')
-            : '<span class="surface-chip">No MCP surfaces</span>';
-          const sourcePath = plugin.sourcePath
-            ? '<div class="path-chip mono">' + plugin.sourcePath + '</div>'
-            : '<div class="path-chip mono">Unknown source</div>';
-          const description = plugin.description || 'No description provided.';
-          return [
-            '<article class="plugin-card">',
-            '<div class="plugin-head">',
-            '<div class="plugin-title">',
-            '<h3>' + plugin.name + '</h3>',
-            '<p>' + description + '</p>',
-            '<div class="badge-row">',
-            '<span class="badge mono">' + plugin.id + '</span>',
-            '<span class="badge mono">v' + plugin.version + '</span>',
-            '<span class="badge mono">' + plugin.sourceKind + '</span>',
-            '<span class="badge">worker</span>',
-            '</div>',
-            '</div>',
-            '<div class="plugin-actions">',
-            '<button class="secondary" data-action="reload" data-plugin-id="' + plugin.id + '">Reload</button>',
-            '<button class="danger" data-action="unload" data-plugin-id="' + plugin.id + '">Unload</button>',
-            '</div>',
-            '</div>',
-            '<div class="plugin-meta">',
-            '<div><span class="label">Loaded at</span><div class="mono">' + formatDate(plugin.loadedAt) + '</div></div>',
-            '<div><span class="label">Surfaces</span><div>' + routeSegments + '</div></div>',
-            '<div><span class="label">Source</span>' + sourcePath + '</div>',
-            '</div>',
-            '</article>',
           ].join('');
         }).join('');
       }
@@ -570,73 +562,73 @@ export function renderPluginAdminPage(input: { defaultLoadPath: string }): strin
         renderMeta(data);
         renderRoots(data.allowedRoots || []);
         renderAutoloadRoots(data.roots || [], data.plugins || []);
-        renderPlugins(data.plugins || []);
       }
-
-      loadForm.addEventListener('submit', async (event) => {
-        event.preventDefault();
-        const pluginPath = pathInput.value.trim();
-        if (!pluginPath) {
-          setStatus('Enter a plugin package path first.', 'error');
-          return;
-        }
-
-        loadButton.disabled = true;
-        setStatus('Loading plugin...', '');
-        try {
-          await callApi('/api/plugins/load', { path: pluginPath });
-          setStatus('Plugin loaded.', 'success');
-          await refresh();
-        } catch (error) {
-          setStatus(error instanceof Error ? error.message : String(error), 'error');
-        } finally {
-          loadButton.disabled = false;
-        }
-      });
-
-      pluginsNode.addEventListener('click', async (event) => {
-        const target = event.target;
-        if (!(target instanceof HTMLButtonElement)) return;
-        const action = target.getAttribute('data-action');
-        const pluginID = target.getAttribute('data-plugin-id');
-        if (!action || !pluginID) return;
-
-        target.disabled = true;
-        setStatus(action === 'reload' ? 'Reloading plugin...' : 'Unloading plugin...', '');
-        try {
-          if (action === 'reload') {
-            await callApi('/api/plugins/reload', { pluginID });
-            setStatus('Plugin reloaded.', 'success');
-          } else {
-            await callApi('/api/plugins/unload', { pluginID });
-            setStatus('Plugin unloaded.', 'success');
-          }
-          await refresh();
-        } catch (error) {
-          setStatus(error instanceof Error ? error.message : String(error), 'error');
-        } finally {
-          target.disabled = false;
-        }
-      });
 
       autoloadRootsNode.addEventListener('click', async (event) => {
         const target = event.target;
         if (!(target instanceof HTMLButtonElement)) return;
         const action = target.getAttribute('data-action');
+        if (!action) return;
+
+        if (action === 'package-load') {
+          const packagePath = target.getAttribute('data-package-path');
+          if (!packagePath) return;
+          target.disabled = true;
+          setStatus('Loading ' + packagePath + '...', '');
+          try {
+            await callApi('/api/plugins/load', { path: packagePath });
+            setStatus('Plugin loaded.', 'success');
+            await refresh();
+          } catch (error) {
+            setStatus(error instanceof Error ? error.message : String(error), 'error');
+          } finally {
+            target.disabled = false;
+          }
+          return;
+        }
+
+        if (action === 'package-reload' || action === 'package-unload') {
+          const pluginID = target.getAttribute('data-plugin-id');
+          if (!pluginID) return;
+          target.disabled = true;
+          setStatus(action === 'package-reload' ? 'Reloading plugin...' : 'Unloading plugin...', '');
+          try {
+            if (action === 'package-reload') {
+              await callApi('/api/plugins/reload', { pluginID });
+              setStatus('Plugin reloaded.', 'success');
+            } else {
+              await callApi('/api/plugins/unload', { pluginID });
+              setStatus('Plugin unloaded.', 'success');
+            }
+            await refresh();
+          } catch (error) {
+            setStatus(error instanceof Error ? error.message : String(error), 'error');
+          } finally {
+            target.disabled = false;
+          }
+          return;
+        }
+
+      });
+
+      autoloadRootsNode.addEventListener('change', async (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLInputElement)) return;
+        const action = target.getAttribute('data-action');
         if (action !== 'autoload-toggle') return;
 
         const rootPath = target.getAttribute('data-root-path');
         const packageName = target.getAttribute('data-package-name');
-        const enabled = target.getAttribute('data-enabled') === 'true';
         if (!rootPath || !packageName) return;
 
         target.disabled = true;
-        setStatus((enabled ? 'Disabling ' : 'Enabling ') + packageName + '...', '');
+        setStatus((target.checked ? 'Enabling ' : 'Disabling ') + packageName + ' autoload...', '');
         try {
-          await callApi('/api/plugins/autoload', { rootPath, packageName, enabled: !enabled });
+          await callApi('/api/plugins/autoload', { rootPath, packageName, enabled: target.checked });
           setStatus('Autoload config updated for ' + packageName + '.', 'success');
           await refresh();
         } catch (error) {
+          target.checked = !target.checked;
           setStatus(error instanceof Error ? error.message : String(error), 'error');
         } finally {
           target.disabled = false;

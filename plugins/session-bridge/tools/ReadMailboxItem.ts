@@ -1,6 +1,6 @@
-import { markMailboxRead } from "../mailbox.ts";
-import { normalizeStringArg } from "../common.ts";
-import type { SessionBridgeServices } from "../types.ts";
+import { markMailboxRead } from "../mailbox.js";
+import { normalizeStringArg } from "../common.js";
+import type { SessionBridgeServices } from "../types.js";
 
 export const READ_MAILBOX_ITEM_TOOL = {
   name: "ReadMailboxItem",

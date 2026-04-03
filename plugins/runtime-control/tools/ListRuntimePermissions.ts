@@ -1,5 +1,5 @@
-import { normalizeList, normalizePermissionStatus, normalizeString } from "../common.ts";
-import type { RuntimeControlServices } from "../types.ts";
+import { normalizeList, normalizePermissionStatus, normalizeString } from "../common.js";
+import type { RuntimeControlServices } from "../types.js";
 
 export const LIST_RUNTIME_PERMISSIONS_TOOL = {
   name: "ListRuntimePermissions",

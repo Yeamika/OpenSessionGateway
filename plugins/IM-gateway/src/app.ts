@@ -6,14 +6,15 @@ import { pipeline } from "node:stream/promises";
 
 import type { PluginContext } from "@opensessiongateway/server-plugin-sdk";
 
-import type { ImBridgeConfig } from "./config.ts";
-import { GatewayProviderRegistry, type GatewayProviderAccountRuntime, type GatewayProviderInboundEvent, type GatewayProviderPlugin } from "./provider.ts";
-import { StateStore } from "./state.ts";
+import type { ImBridgeConfig } from "./config.js";
+import { GatewayProviderRegistry, type GatewayProviderAccountRuntime, type GatewayProviderInboundEvent, type GatewayProviderPlugin } from "./provider.js";
+import { StateStore } from "./state.js";
 import type {
   GatewayAccount,
   GatewayAsset,
   GatewayChatSummary,
   GatewayInboundEvent,
+  GatewayMemberIDType,
   GatewayMessageSummary,
   GatewayResourceType,
   GatewayRoute,
@@ -21,8 +22,9 @@ import type {
   GatewaySendMessageResult,
   GatewaySessionBinding,
   GatewayUpload,
-} from "./types.ts";
-import { accountKeyOf, routeIDOf } from "./types.ts";
+  GatewayUserIDType,
+} from "./types.js";
+import { accountKeyOf, routeIDOf } from "./types.js";
 
 type LogLevel = "debug" | "info" | "warn" | "error";
 
@@ -104,9 +106,9 @@ function readSessionStatusHook(ctx: PluginContext): SessionStatusChangeHook | nu
   return typeof hooks.onSessionStatusChange === "function" ? hooks.onSessionStatusChange : null;
 }
 
-function toStatusLabel(input: { runtimeStatus?: string | null; sessionStatus?: string | null; currentStatus?: string | null }): "idle" | "busy" | "error" | null {
+function toStatusLabel(input: { runtimeStatus?: string | null; sessionStatus?: string | null; currentStatus?: string | null }): "idle" | "busy" | "error" | "offline" | null {
   const runtimeStatus = (input.runtimeStatus || "").trim().toLowerCase();
-  if (runtimeStatus === "offline") return "error";
+  if (runtimeStatus === "offline") return "offline";
   const sessionStatus = (input.sessionStatus || "").trim().toLowerCase();
   if (sessionStatus === "idle" || sessionStatus === "busy" || sessionStatus === "error") return sessionStatus;
   const currentStatus = (input.currentStatus || "").trim().toLowerCase();
@@ -441,6 +443,146 @@ export class ImBridgeApp {
     };
   }
 
+  async createAccountChat(input: {
+    provider: string;
+    accountID: string;
+    name: string;
+    description?: string;
+    ownerID?: string;
+    userIDs?: string[];
+    botIDs?: string[];
+    userIDType?: GatewayUserIDType;
+    external?: boolean;
+    chatMode?: string;
+    chatType?: string;
+    setBotManager?: boolean;
+    uuid?: string;
+    sessionBindingID?: string;
+    enabled?: boolean;
+  }) {
+    const account = await this.requireAccount(input.provider, input.accountID);
+    if (input.sessionBindingID?.trim()) await this.requireSessionBinding(input.sessionBindingID);
+    const runtime = await this.requireAccountRuntime(account.provider, account.accountID);
+    if (typeof runtime.createChat !== "function") throw new Error(`provider does not support chat creation: ${account.provider}`);
+    const chat = await runtime.createChat({
+      name: requireString(input.name, "name"),
+      description: input.description?.trim() || undefined,
+      ownerID: input.ownerID?.trim() || undefined,
+      userIDs: Array.isArray(input.userIDs) ? input.userIDs : [],
+      botIDs: Array.isArray(input.botIDs) ? input.botIDs : [],
+      userIDType: input.userIDType,
+      external: input.external,
+      chatMode: input.chatMode?.trim() || undefined,
+      chatType: input.chatType?.trim() || undefined,
+      setBotManager: input.setBotManager,
+      uuid: input.uuid?.trim() || undefined,
+    });
+    const route = await this.upsertRoute({
+      provider: account.provider,
+      accountID: account.accountID,
+      chatID: chat.chatID,
+      chatName: chat.name || input.name,
+      enabled: input.enabled,
+      sessionBindingID: input.sessionBindingID,
+    });
+    await this.stateStore.saveChat(route.routeID, structuredClone(chat));
+    return {
+      provider: account.provider,
+      accountID: account.accountID,
+      routeID: route.routeID,
+      route,
+      chat,
+    };
+  }
+
+  async deleteAccountChat(input: { provider: string; accountID: string; chatID: string; removeRoute?: boolean }) {
+    const account = await this.requireAccount(input.provider, input.accountID);
+    const runtime = await this.requireAccountRuntime(account.provider, account.accountID);
+    if (typeof runtime.deleteChat !== "function") throw new Error(`provider does not support chat deletion: ${account.provider}`);
+    const chatID = requireString(input.chatID, "chatID");
+    await runtime.deleteChat(chatID);
+    const routeID = routeIDOf(account.provider, account.accountID, chatID);
+    const route = await this.stateStore.getRoute(routeID);
+    if (route && input.removeRoute !== false) {
+      await this.stateStore.removeRoute(routeID);
+      await this.refreshStatusWatches();
+    }
+    return {
+      ok: true,
+      provider: account.provider,
+      accountID: account.accountID,
+      chatID,
+      routeID,
+      routeRemoved: Boolean(route && input.removeRoute !== false),
+    };
+  }
+
+  async listAccountChatMembers(input: {
+    provider: string;
+    accountID: string;
+    chatID: string;
+    memberIDType?: GatewayUserIDType;
+    limit?: number;
+  }) {
+    const account = await this.requireAccount(input.provider, input.accountID);
+    const runtime = await this.requireAccountRuntime(account.provider, account.accountID);
+    if (typeof runtime.listChatMembers !== "function") throw new Error(`provider does not support listing chat members: ${account.provider}`);
+    const chatID = requireString(input.chatID, "chatID");
+    const result = await runtime.listChatMembers(chatID, {
+      memberIDType: input.memberIDType,
+      limit: Math.min(500, Math.max(1, Math.floor(input.limit || 100))),
+    });
+    return {
+      provider: account.provider,
+      accountID: account.accountID,
+      routeID: routeIDOf(account.provider, account.accountID, chatID),
+      chatID,
+      total: result.total,
+      count: result.items.length,
+      items: result.items,
+    };
+  }
+
+  async addAccountChatMembers(input: {
+    provider: string;
+    accountID: string;
+    chatID: string;
+    memberIDs: string[];
+    memberIDType?: GatewayMemberIDType;
+    succeedType?: number;
+  }) {
+    const account = await this.requireAccount(input.provider, input.accountID);
+    const runtime = await this.requireAccountRuntime(account.provider, account.accountID);
+    if (typeof runtime.addChatMembers !== "function") throw new Error(`provider does not support adding chat members: ${account.provider}`);
+    const chatID = requireString(input.chatID, "chatID");
+    const memberIDs = [...new Set((Array.isArray(input.memberIDs) ? input.memberIDs : []).map((item) => typeof item === "string" ? item.trim() : "").filter(Boolean))];
+    if (!memberIDs.length) throw new Error("memberIDs is required");
+    const result = await runtime.addChatMembers(chatID, {
+      memberIDs,
+      memberIDType: input.memberIDType,
+      succeedType: typeof input.succeedType === "number" ? Math.max(0, Math.floor(input.succeedType)) : undefined,
+    });
+    const routeID = routeIDOf(account.provider, account.accountID, chatID);
+    const route = await this.stateStore.getRoute(routeID);
+    if (route) {
+      try {
+        await this.stateStore.saveChat(routeID, await runtime.getChat(chatID));
+      } catch {
+        // ignore chat refresh failure after member change
+      }
+    }
+    return {
+      provider: account.provider,
+      accountID: account.accountID,
+      routeID,
+      chatID,
+      requestedCount: memberIDs.length,
+      invalidIDs: result.invalidIDs,
+      notExistedIDs: result.notExistedIDs,
+      pendingApprovalIDs: result.pendingApprovalIDs,
+    };
+  }
+
   async listSessionBindings() {
     const bindings = await this.stateStore.listSessionBindings();
     return { count: bindings.length, items: bindings.map(bindingPublic) };
@@ -467,14 +609,22 @@ export class ImBridgeApp {
     const runtimeID = requireString(input.runtimeID, "runtimeID");
     const directory = requireString(input.directory, "directory");
     await this.ctx.osg.requireOnlineRuntime(runtimeID);
-    const created = await this.ctx.osg.createNewSession({
+    const createNewSession = this.ctx.osg.createNewSession as unknown as (payload: {
+      runtimeID: string;
+      instanceWorkspaceDirectory: string;
+      content: string;
+      displayID?: string;
+      title?: string;
+      model?: string;
+    }) => Promise<{ ok?: boolean; sessionID?: string; error?: string }>;
+    const created = await createNewSession({
       runtimeID,
       instanceWorkspaceDirectory: directory,
       content: input.content?.trim() || "You are the IM gateway conversation handler.",
       displayID: input.displayID?.trim() || undefined,
       title: input.title?.trim() || undefined,
       model: input.model?.trim() || undefined,
-    }) as { ok?: boolean; sessionID?: string; error?: string };
+    });
     if (!created?.ok || !created.sessionID) throw new Error(created?.error || "failed to create session");
     return this.upsertSessionBinding({
       sessionBindingID: requireString(input.sessionBindingID, "sessionBindingID"),
@@ -800,10 +950,41 @@ export class ImBridgeApp {
     return lines.join("\n");
   }
 
+  private async noteRouteTargetIssue(route: GatewayRoute, label: "offline" | "missing_session", detail: string): Promise<void> {
+    const previous = await this.stateStore.getRouteStatus(route.routeID);
+    await this.applyRouteStatus(route, label, detail);
+    if (previous?.label === label && (previous.detail || "") === detail) return;
+    this.logger.warn("route target unavailable", {
+      routeID: route.routeID,
+      sessionBindingID: route.sessionBindingID,
+      label,
+      message: detail,
+    });
+  }
+
+  private async verifyRouteBindingTarget(route: GatewayRoute, binding: GatewaySessionBinding): Promise<boolean> {
+    if (!binding.enabled || !binding.runtimeID || !binding.sessionID) {
+      await this.noteRouteTargetIssue(route, "offline", "session binding is incomplete or disabled");
+      return false;
+    }
+    const runtimeOnline = await this.ctx.osg.hasOnlineRuntime(binding.runtimeID).catch(() => false);
+    if (!runtimeOnline) {
+      await this.noteRouteTargetIssue(route, "offline", `runtime offline: ${binding.runtimeID}`);
+      return false;
+    }
+    const sessionOnline = await this.ctx.osg.hasOnlineRuntimeSession(binding.runtimeID, binding.sessionID).catch(() => false);
+    if (!sessionOnline) {
+      await this.noteRouteTargetIssue(route, "missing_session", `session not found: ${binding.sessionID}`);
+      return false;
+    }
+    return true;
+  }
+
   private async forwardInboundEventToOsg(route: GatewayRoute, event: GatewayInboundEvent): Promise<void> {
     if (!route.enabled || !route.sessionBindingID) return;
     const binding = await this.requireSessionBinding(route.sessionBindingID);
     if (!binding.enabled || !binding.runtimeID || !binding.sessionID) return;
+    if (!await this.verifyRouteBindingTarget(route, binding)) return;
     const forwardKey = `${route.routeID}::${event.messageID}`;
     if (await this.stateStore.hasForwardedInbound(forwardKey)) return;
     const addPrompt = this.ctx.osg.addPrompt as (payload: {
@@ -820,7 +1001,14 @@ export class ImBridgeApp {
       model: binding.model || undefined,
       system: this.buildInboundSystemPrompt(route, binding, event),
     });
-    if (!response?.ok) throw new Error(response?.error || "failed to forward inbound event to OSG");
+    if (!response?.ok) {
+      const message = response?.error || "failed to forward inbound event to OSG";
+      if (/instance not found/i.test(message) || /session not found/i.test(message)) {
+        await this.noteRouteTargetIssue(route, "missing_session", message);
+        return;
+      }
+      throw new Error(message);
+    }
     await this.stateStore.markForwardedInbound(forwardKey, this.config.forwardedInboundCacheLimit);
   }
 
@@ -887,6 +1075,10 @@ export class ImBridgeApp {
         const userMessages = [...normalized]
           .filter((item) => item.senderType === "user")
           .sort((a, b) => Date.parse(a.createTime || "1970-01-01") - Date.parse(b.createTime || "1970-01-01"));
+        if (userMessages.length > 0 && route.sessionBindingID) {
+          const binding = await this.stateStore.getSessionBinding(route.sessionBindingID);
+          if (binding && !await this.verifyRouteBindingTarget(route, binding)) continue;
+        }
         for (const message of userMessages) {
           const forwardKey = `${route.routeID}::${message.messageID}`;
           if (await this.stateStore.hasForwardedInbound(forwardKey)) continue;
@@ -954,15 +1146,14 @@ export class ImBridgeApp {
     }
   }
 
-  private async applyRouteStatus(route: GatewayRoute, label: "idle" | "busy" | "error"): Promise<void> {
+  private async applyRouteStatus(route: GatewayRoute, label: "idle" | "busy" | "error" | "offline" | "missing_session", detail = ""): Promise<void> {
     const previous = await this.stateStore.getRouteStatus(route.routeID);
     const runtime = this.accountRuntimes.get(accountKeyOf(route.provider, route.accountID))?.runtime;
-    if (!runtime) return;
-    if (runtime.addMessageReaction && runtime.removeMessageReaction) {
+    if (runtime?.addMessageReaction && runtime?.removeMessageReaction) {
       if (label === "busy") {
         const targetMessageID = previous?.targetMessageID || (await this.stateStore.listRecentInboundEvents(route.routeID, 1))[0]?.messageID || "";
         if (!targetMessageID) {
-          await this.stateStore.saveRouteStatus({ routeID: route.routeID, label, targetMessageID: "", reactionID: "", reactionEmojiType: STATUS_BUSY_REACTION_EMOJI, updatedAt: new Date().toISOString() });
+          await this.stateStore.saveRouteStatus({ routeID: route.routeID, label, targetMessageID: "", reactionID: "", reactionEmojiType: STATUS_BUSY_REACTION_EMOJI, detail, updatedAt: new Date().toISOString() });
           return;
         }
         if (previous?.label === "busy" && previous.targetMessageID === targetMessageID && previous.reactionID) return;
@@ -970,7 +1161,7 @@ export class ImBridgeApp {
           await runtime.removeMessageReaction(previous.targetMessageID, previous.reactionID).catch(() => undefined);
         }
         const created = await runtime.addMessageReaction(targetMessageID, STATUS_BUSY_REACTION_EMOJI);
-        await this.stateStore.saveRouteStatus({ routeID: route.routeID, label, targetMessageID, reactionID: created.reactionID, reactionEmojiType: created.emojiType, updatedAt: new Date().toISOString() });
+        await this.stateStore.saveRouteStatus({ routeID: route.routeID, label, targetMessageID, reactionID: created.reactionID, reactionEmojiType: created.emojiType, detail, updatedAt: new Date().toISOString() });
         return;
       }
       if (previous?.reactionID && previous.targetMessageID) {
@@ -982,6 +1173,19 @@ export class ImBridgeApp {
         targetMessageID: previous?.targetMessageID || "",
         reactionID: "",
         reactionEmojiType: previous?.reactionEmojiType || STATUS_BUSY_REACTION_EMOJI,
+        detail,
+        updatedAt: new Date().toISOString(),
+      });
+      return;
+    }
+    if (label === "busy") {
+      await this.stateStore.saveRouteStatus({
+        routeID: route.routeID,
+        label,
+        targetMessageID: previous?.targetMessageID || "",
+        reactionID: "",
+        reactionEmojiType: previous?.reactionEmojiType || STATUS_BUSY_REACTION_EMOJI,
+        detail,
         updatedAt: new Date().toISOString(),
       });
       return;
@@ -992,6 +1196,7 @@ export class ImBridgeApp {
       targetMessageID: previous?.targetMessageID || "",
       reactionID: "",
       reactionEmojiType: previous?.reactionEmojiType || "",
+      detail,
       updatedAt: new Date().toISOString(),
     });
   }

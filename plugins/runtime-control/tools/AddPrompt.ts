@@ -1,5 +1,5 @@
-import { normalizeString } from "../common.ts";
-import type { RuntimeControlServices } from "../types.ts";
+import { normalizeString } from "../common.js";
+import type { RuntimeControlServices } from "../types.js";
 
 export const ADD_PROMPT_TOOL = {
   name: "AddPrompt",

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import type { SessionBridgeServices } from "./types.ts";
+import type { SessionBridgeServices } from "./types.js";
 
 const MAILBOX_INITIAL_REMINDER_MS = 10_000;
 const MAILBOX_REPEAT_REMINDER_MS = 60_000;

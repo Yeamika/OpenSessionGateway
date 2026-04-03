@@ -4,7 +4,7 @@ import type { Readable } from "node:stream";
 import type {
   GatewayProviderInboundEvent,
   GatewayReactionResult,
-} from "../../src/provider.ts";
+} from "../../src/provider.js";
 import type {
   GatewayChatMember,
   GatewayChatSummary,
@@ -13,7 +13,7 @@ import type {
   GatewayResourceType,
   GatewaySendMessageResult,
   GatewayUserIDType,
-} from "../../src/types.ts";
+} from "../../src/types.js";
 
 export type FeishuGatewayAccountConfig = {
   appId: string;
@@ -375,6 +375,109 @@ export class FeishuGatewayClient {
     return normalizeChat((response.data || {}) as Record<string, unknown>, "", chatID);
   }
 
+  async createChat(input: {
+    name: string;
+    description?: string;
+    ownerID?: string;
+    userIDs?: string[];
+    botIDs?: string[];
+    userIDType?: GatewayUserIDType;
+    external?: boolean;
+    chatMode?: string;
+    chatType?: string;
+    setBotManager?: boolean;
+    uuid?: string;
+  }): Promise<GatewayChatSummary> {
+    const response = await this.client.im.v1.chat.create({
+      params: {
+        user_id_type: normalizeUserIDType(input.userIDType, defaultUserIDType(this.config)),
+        set_bot_manager: typeof input.setBotManager === "boolean" ? input.setBotManager : undefined,
+        uuid: asString(input.uuid) || undefined,
+      },
+      data: {
+        name: input.name.trim(),
+        description: asString(input.description) || undefined,
+        owner_id: asString(input.ownerID) || undefined,
+        user_id_list: uniqueStrings(input.userIDs),
+        bot_id_list: uniqueStrings(input.botIDs),
+        external: input.external === true ? true : undefined,
+        chat_mode: asString(input.chatMode) || undefined,
+        chat_type: asString(input.chatType) || undefined,
+      },
+    });
+    const chatID = asString(response.data?.chat_id);
+    if (!chatID) throw new Error(`Feishu chat create failed for ${this.accountID}`);
+    try {
+      return await this.getChat(chatID);
+    } catch {
+      return normalizeChat((response.data || {}) as Record<string, unknown>, "", chatID);
+    }
+  }
+
+  async deleteChat(chatID: string): Promise<void> {
+    await this.client.im.v1.chat.delete({ path: { chat_id: chatID } });
+  }
+
+  async listChatMembers(chatID: string, options?: { memberIDType?: GatewayUserIDType; limit?: number }): Promise<{
+    chatID: string;
+    total: number | null;
+    items: GatewayChatMember[];
+  }> {
+    const limit = clamp(Math.floor(options?.limit || 100), 1, 500);
+    const memberIDType = normalizeUserIDType(options?.memberIDType, defaultUserIDType(this.config));
+    const items: GatewayChatMember[] = [];
+    let total: number | null = null;
+    let pageToken: string | undefined;
+    while (items.length < limit) {
+      const response = await this.client.im.v1.chatMembers.get({
+        path: { chat_id: chatID },
+        params: {
+          member_id_type: memberIDType,
+          page_size: Math.min(100, limit - items.length),
+          page_token: pageToken,
+        },
+      });
+      const data = response.data || {};
+      const rows = Array.isArray(data.items) ? data.items : [];
+      if (total === null) total = asNullableNumber(data.member_total);
+      for (const row of rows) {
+        const item = row && typeof row === "object" ? (row as Record<string, unknown>) : {};
+        items.push(normalizeChatMember(item));
+        if (items.length >= limit) break;
+      }
+      if (data.has_more !== true) break;
+      pageToken = asString(data.page_token) || undefined;
+      if (!pageToken) break;
+    }
+    return { chatID, total, items };
+  }
+
+  async addChatMembers(chatID: string, input: {
+    memberIDs: string[];
+    memberIDType?: GatewayMemberIDType;
+    succeedType?: number;
+  }): Promise<{
+    invalidIDs: string[];
+    notExistedIDs: string[];
+    pendingApprovalIDs: string[];
+  }> {
+    const response = await this.client.im.v1.chatMembers.create({
+      path: { chat_id: chatID },
+      params: {
+        member_id_type: normalizeMemberIDType(input.memberIDType, defaultUserIDType(this.config)),
+        succeed_type: typeof input.succeedType === "number" ? Math.max(0, Math.floor(input.succeedType)) : undefined,
+      },
+      data: {
+        id_list: uniqueStrings(input.memberIDs),
+      },
+    });
+    return {
+      invalidIDs: uniqueStrings(response.data?.invalid_id_list),
+      notExistedIDs: uniqueStrings(response.data?.not_existed_id_list),
+      pendingApprovalIDs: uniqueStrings(response.data?.pending_approval_id_list),
+    };
+  }
+
   async listChatMessages(chatID: string, limit: number): Promise<GatewayMessageSummary[]> {
     const response = await this.client.im.v1.message.list({
       params: {
@@ -406,7 +509,7 @@ export class FeishuGatewayClient {
 
   async sendTextMessage(chatID: string, text: string): Promise<GatewaySendMessageResult> {
     const response = await this.client.im.v1.message.create({
-      params: { receive_id_type: this.config.receiveIdType },
+      params: { receive_id_type: "chat_id" },
       data: { receive_id: chatID, msg_type: "text", content: JSON.stringify({ text }) },
     });
     return { chatID, messageID: asString(response.data?.message_id), msgType: "text", sentAt: new Date().toISOString() };
@@ -414,7 +517,7 @@ export class FeishuGatewayClient {
 
   async sendImageMessage(chatID: string, imageKey: string): Promise<GatewaySendMessageResult> {
     const response = await this.client.im.v1.message.create({
-      params: { receive_id_type: this.config.receiveIdType },
+      params: { receive_id_type: "chat_id" },
       data: { receive_id: chatID, msg_type: "image", content: JSON.stringify({ image_key: imageKey }) },
     });
     return { chatID, messageID: asString(response.data?.message_id), msgType: "image", sentAt: new Date().toISOString() };
@@ -422,7 +525,7 @@ export class FeishuGatewayClient {
 
   async sendFileMessage(chatID: string, fileKey: string): Promise<GatewaySendMessageResult> {
     const response = await this.client.im.v1.message.create({
-      params: { receive_id_type: this.config.receiveIdType },
+      params: { receive_id_type: "chat_id" },
       data: { receive_id: chatID, msg_type: "file", content: JSON.stringify({ file_key: fileKey }) },
     });
     return { chatID, messageID: asString(response.data?.message_id), msgType: "file", sentAt: new Date().toISOString() };

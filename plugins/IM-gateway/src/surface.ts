@@ -1,12 +1,17 @@
 import type { McpPlugin } from "@opensessiongateway/server-plugin-sdk";
 import { errorResult, parseRpc, successResult, textResult } from "@opensessiongateway/server-plugin-sdk";
 
-import type { ImBridgeApp } from "./app.ts";
+import type { ImBridgeApp } from "./app.js";
 
 function normalizeString(value: unknown, name: string): string {
   const clean = typeof value === "string" ? value.trim() : "";
   if (!clean) throw new Error(`${name} is required`);
   return clean;
+}
+
+function normalizeOptionalString(value: unknown): string | undefined {
+  const clean = typeof value === "string" ? value.trim() : "";
+  return clean || undefined;
 }
 
 function normalizeLimit(value: unknown, fallback: number, max = 50): number {
@@ -29,15 +34,15 @@ function normalizeObject(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" ? value as Record<string, unknown> : {};
 }
 
-const TOOLS = [
-  { name: "GetTransferEndpoint", description: "Return local upload and asset endpoints", inputSchema: { type: "object", properties: {}, additionalProperties: false } },
+function normalizeStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value.map((item) => typeof item === "string" ? item.trim() : "").filter(Boolean))];
+}
+
+const CONTROL_TOOLS = [
   { name: "GetGatewayInfo", description: "Return IM gateway status", inputSchema: { type: "object", properties: {}, additionalProperties: false } },
   { name: "ListProviders", description: "List installed IM gateway provider plugins", inputSchema: { type: "object", properties: {}, additionalProperties: false } },
-  {
-    name: "ListAccounts",
-    description: "List configured IM accounts",
-    inputSchema: { type: "object", properties: {}, additionalProperties: false },
-  },
+  { name: "ListAccounts", description: "List configured IM accounts", inputSchema: { type: "object", properties: {}, additionalProperties: false } },
   {
     name: "UpsertAccount",
     description: "Create or update one provider account",
@@ -71,6 +76,80 @@ const TOOLS = [
       type: "object",
       properties: { provider: { type: "string" }, accountID: { type: "string" }, limit: { type: "number" }, refresh: { type: "boolean" } },
       required: ["provider", "accountID"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "CreateAccountChat",
+    description: "Create one group chat for one account",
+    inputSchema: {
+      type: "object",
+      properties: {
+        provider: { type: "string" },
+        accountID: { type: "string" },
+        name: { type: "string" },
+        description: { type: "string" },
+        ownerID: { type: "string" },
+        userIDs: { type: "array", items: { type: "string" } },
+        botIDs: { type: "array", items: { type: "string" } },
+        userIDType: { type: "string" },
+        external: { type: "boolean" },
+        chatMode: { type: "string" },
+        chatType: { type: "string" },
+        setBotManager: { type: "boolean" },
+        uuid: { type: "string" },
+        sessionBindingID: { type: "string" },
+        enabled: { type: "boolean" },
+      },
+      required: ["provider", "accountID", "name"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "DeleteAccountChat",
+    description: "Delete one group chat for one account",
+    inputSchema: {
+      type: "object",
+      properties: {
+        provider: { type: "string" },
+        accountID: { type: "string" },
+        chatID: { type: "string" },
+        removeRoute: { type: "boolean" },
+      },
+      required: ["provider", "accountID", "chatID"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "ListAccountChatMembers",
+    description: "List members of one group chat",
+    inputSchema: {
+      type: "object",
+      properties: {
+        provider: { type: "string" },
+        accountID: { type: "string" },
+        chatID: { type: "string" },
+        memberIDType: { type: "string" },
+        limit: { type: "number" },
+      },
+      required: ["provider", "accountID", "chatID"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "AddAccountChatMembers",
+    description: "Add users or bots into one group chat",
+    inputSchema: {
+      type: "object",
+      properties: {
+        provider: { type: "string" },
+        accountID: { type: "string" },
+        chatID: { type: "string" },
+        memberIDs: { type: "array", items: { type: "string" } },
+        memberIDType: { type: "string" },
+        succeedType: { type: "number" },
+      },
+      required: ["provider", "accountID", "chatID", "memberIDs"],
       additionalProperties: false,
     },
   },
@@ -151,6 +230,10 @@ const TOOLS = [
     description: "Delete one route",
     inputSchema: { type: "object", properties: { routeID: { type: "string" } }, required: ["routeID"], additionalProperties: false },
   },
+];
+
+const CHAT_TOOLS = [
+  { name: "GetTransferEndpoint", description: "Return local upload and asset endpoints", inputSchema: { type: "object", properties: {}, additionalProperties: false } },
   {
     name: "ListRouteMessages",
     description: "List recent messages of one route",
@@ -213,17 +296,136 @@ const TOOLS = [
   },
 ];
 
-export function createImBridgeSurface(app: ImBridgeApp): McpPlugin {
+async function handleControlTool(app: ImBridgeApp, toolName: string, toolArgs: Record<string, unknown>) {
+  if (toolName === "GetGatewayInfo") return app.getGatewayInfo();
+  if (toolName === "ListProviders") return app.listProviders();
+  if (toolName === "ListAccounts") return app.listAccounts();
+  if (toolName === "UpsertAccount") return app.upsertAccount({
+    provider: normalizeString(toolArgs.provider, "provider"),
+    accountID: normalizeString(toolArgs.accountID, "accountID"),
+    displayName: normalizeOptionalString(toolArgs.displayName),
+    enabled: typeof toolArgs.enabled === "boolean" ? toolArgs.enabled : undefined,
+    config: normalizeObject(toolArgs.config),
+  });
+  if (toolName === "DeleteAccount") return app.deleteAccount(normalizeString(toolArgs.provider, "provider"), normalizeString(toolArgs.accountID, "accountID"));
+  if (toolName === "ListAccountChats") return app.listAccountChats(
+    normalizeString(toolArgs.provider, "provider"),
+    normalizeString(toolArgs.accountID, "accountID"),
+    { limit: normalizeLimit(toolArgs.limit, 20, 50), refresh: normalizeBoolean(toolArgs.refresh, true) },
+  );
+  if (toolName === "CreateAccountChat") return app.createAccountChat({
+    provider: normalizeString(toolArgs.provider, "provider"),
+    accountID: normalizeString(toolArgs.accountID, "accountID"),
+    name: normalizeString(toolArgs.name, "name"),
+    description: normalizeOptionalString(toolArgs.description),
+    ownerID: normalizeOptionalString(toolArgs.ownerID),
+    userIDs: normalizeStringArray(toolArgs.userIDs),
+    botIDs: normalizeStringArray(toolArgs.botIDs),
+    userIDType: normalizeOptionalString(toolArgs.userIDType) as "user_id" | "union_id" | "open_id" | undefined,
+    external: typeof toolArgs.external === "boolean" ? toolArgs.external : undefined,
+    chatMode: normalizeOptionalString(toolArgs.chatMode),
+    chatType: normalizeOptionalString(toolArgs.chatType),
+    setBotManager: typeof toolArgs.setBotManager === "boolean" ? toolArgs.setBotManager : undefined,
+    uuid: normalizeOptionalString(toolArgs.uuid),
+    sessionBindingID: normalizeOptionalString(toolArgs.sessionBindingID),
+    enabled: typeof toolArgs.enabled === "boolean" ? toolArgs.enabled : undefined,
+  });
+  if (toolName === "DeleteAccountChat") return app.deleteAccountChat({
+    provider: normalizeString(toolArgs.provider, "provider"),
+    accountID: normalizeString(toolArgs.accountID, "accountID"),
+    chatID: normalizeString(toolArgs.chatID, "chatID"),
+    removeRoute: typeof toolArgs.removeRoute === "boolean" ? toolArgs.removeRoute : undefined,
+  });
+  if (toolName === "ListAccountChatMembers") return app.listAccountChatMembers({
+    provider: normalizeString(toolArgs.provider, "provider"),
+    accountID: normalizeString(toolArgs.accountID, "accountID"),
+    chatID: normalizeString(toolArgs.chatID, "chatID"),
+    memberIDType: normalizeOptionalString(toolArgs.memberIDType) as "user_id" | "union_id" | "open_id" | undefined,
+    limit: normalizeLimit(toolArgs.limit, 100, 500),
+  });
+  if (toolName === "AddAccountChatMembers") return app.addAccountChatMembers({
+    provider: normalizeString(toolArgs.provider, "provider"),
+    accountID: normalizeString(toolArgs.accountID, "accountID"),
+    chatID: normalizeString(toolArgs.chatID, "chatID"),
+    memberIDs: normalizeStringArray(toolArgs.memberIDs),
+    memberIDType: normalizeOptionalString(toolArgs.memberIDType) as "user_id" | "union_id" | "open_id" | "app_id" | undefined,
+    succeedType: typeof toolArgs.succeedType === "number" ? toolArgs.succeedType : undefined,
+  });
+  if (toolName === "ListSessionBindings") return app.listSessionBindings();
+  if (toolName === "UpsertSessionBinding") return app.upsertSessionBinding({
+    sessionBindingID: normalizeString(toolArgs.sessionBindingID, "sessionBindingID"),
+    enabled: typeof toolArgs.enabled === "boolean" ? toolArgs.enabled : undefined,
+    runtimeID: normalizeOptionalString(toolArgs.runtimeID),
+    sessionID: normalizeOptionalString(toolArgs.sessionID),
+    directory: normalizeOptionalString(toolArgs.directory),
+    displayID: normalizeOptionalString(toolArgs.displayID),
+    title: normalizeOptionalString(toolArgs.title),
+    model: normalizeOptionalString(toolArgs.model),
+  });
+  if (toolName === "CreateSessionBinding") return app.createSessionBinding({
+    sessionBindingID: normalizeString(toolArgs.sessionBindingID, "sessionBindingID"),
+    runtimeID: normalizeString(toolArgs.runtimeID, "runtimeID"),
+    directory: normalizeString(toolArgs.directory, "directory"),
+    displayID: normalizeOptionalString(toolArgs.displayID),
+    title: normalizeOptionalString(toolArgs.title),
+    content: normalizeOptionalString(toolArgs.content),
+    model: normalizeOptionalString(toolArgs.model),
+    enabled: typeof toolArgs.enabled === "boolean" ? toolArgs.enabled : undefined,
+  });
+  if (toolName === "DeleteSessionBinding") return app.deleteSessionBinding(normalizeString(toolArgs.sessionBindingID, "sessionBindingID"));
+  if (toolName === "ListRoutes") return app.listRoutes();
+  if (toolName === "GetRoute") return app.getRoute(normalizeString(toolArgs.routeID, "routeID"));
+  if (toolName === "UpsertRoute") return app.upsertRoute({
+    provider: normalizeString(toolArgs.provider, "provider"),
+    accountID: normalizeString(toolArgs.accountID, "accountID"),
+    chatID: normalizeString(toolArgs.chatID, "chatID"),
+    chatName: normalizeOptionalString(toolArgs.chatName),
+    enabled: typeof toolArgs.enabled === "boolean" ? toolArgs.enabled : undefined,
+    sessionBindingID: normalizeOptionalString(toolArgs.sessionBindingID),
+  });
+  if (toolName === "DeleteRoute") return app.deleteRoute(normalizeString(toolArgs.routeID, "routeID"));
+  throw new Error(`unknown tool: ${toolName || "<empty>"}`);
+}
+
+async function handleChatTool(app: ImBridgeApp, toolName: string, toolArgs: Record<string, unknown>) {
+  if (toolName === "GetTransferEndpoint") return app.getTransferEndpoint();
+  if (toolName === "ListRouteMessages") return app.listRouteMessages(normalizeString(toolArgs.routeID, "routeID"), {
+    limit: normalizeLimit(toolArgs.limit, 20, 50),
+    refresh: normalizeBoolean(toolArgs.refresh, true),
+  });
+  if (toolName === "SendRouteTextMessage") return app.sendRouteTextMessage(normalizeString(toolArgs.routeID, "routeID"), normalizeString(toolArgs.text, "text"));
+  if (toolName === "RequestUpload") return app.requestUpload({
+    type: normalizeString(toolArgs.type, "type") as "image" | "file",
+    routeID: normalizeOptionalString(toolArgs.routeID),
+  });
+  if (toolName === "SendRouteUpload") return app.sendRouteUpload(normalizeString(toolArgs.routeID, "routeID"), normalizeString(toolArgs.uploadID, "uploadID"));
+  if (toolName === "RequestDownload") return app.requestDownload({
+    routeID: normalizeString(toolArgs.routeID, "routeID"),
+    messageID: normalizeString(toolArgs.messageID, "messageID"),
+    type: normalizeString(toolArgs.type, "type") as "image" | "file" | "audio" | "media",
+  });
+  if (toolName === "ListRecentRouteEvents") return app.listRecentRouteEvents(normalizeString(toolArgs.routeID, "routeID"), normalizeLimit(toolArgs.limit, 20, 100));
+  throw new Error(`unknown tool: ${toolName || "<empty>"}`);
+}
+
+function createSurface(input: {
+  id: string;
+  routeSegment: string;
+  serverName: string;
+  description: string;
+  tools: Array<Record<string, unknown>>;
+  handler: (app: ImBridgeApp, toolName: string, toolArgs: Record<string, unknown>) => Promise<unknown>;
+}, app: ImBridgeApp): McpPlugin {
   return {
-    id: "im-gateway.surface",
-    routeSegment: "im_gateway",
+    id: input.id,
+    routeSegment: input.routeSegment,
     info() {
       return {
         ok: true,
-        endpoint: "/api/v2/mcp/im_gateway",
-        server: "im_gateway",
+        endpoint: `/api/v2/mcp/${input.routeSegment}`,
+        server: input.serverName,
         implemented: true,
-        description: "Multi-route IM gateway surface",
+        description: input.description,
       };
     },
     async handleRpc(body) {
@@ -231,86 +433,47 @@ export function createImBridgeSurface(app: ImBridgeApp): McpPlugin {
       if (method === "initialize") {
         return Response.json(successResult(id, {
           protocolVersion: "2025-03-26",
-          serverInfo: { name: "im_gateway", version: "0.1.0" },
+          serverInfo: { name: input.serverName, version: "0.1.0" },
           capabilities: { tools: { listChanged: false } },
         }));
       }
       if (method === "notifications/initialized") return new Response(null, { status: 202 });
-      if (method === "tools/list") return Response.json(successResult(id, { tools: TOOLS }));
+      if (method === "tools/list") return Response.json(successResult(id, { tools: input.tools }));
       if (method === "tools/call") {
         const toolName = typeof params.name === "string" ? params.name.trim() : "";
         const toolArgs = normalizeObject(params.arguments);
         try {
-          if (toolName === "GetTransferEndpoint") return Response.json(successResult(id, textResult(app.getTransferEndpoint())));
-          if (toolName === "GetGatewayInfo") return Response.json(successResult(id, textResult(await app.getGatewayInfo())));
-          if (toolName === "ListProviders") return Response.json(successResult(id, textResult(app.listProviders())));
-          if (toolName === "ListAccounts") return Response.json(successResult(id, textResult(await app.listAccounts())));
-          if (toolName === "UpsertAccount") return Response.json(successResult(id, textResult(await app.upsertAccount({
-            provider: normalizeString(toolArgs.provider, "provider"),
-            accountID: normalizeString(toolArgs.accountID, "accountID"),
-            displayName: typeof toolArgs.displayName === "string" ? toolArgs.displayName : undefined,
-            enabled: typeof toolArgs.enabled === "boolean" ? toolArgs.enabled : undefined,
-            config: normalizeObject(toolArgs.config),
-          }))));
-          if (toolName === "DeleteAccount") return Response.json(successResult(id, textResult(await app.deleteAccount(normalizeString(toolArgs.provider, "provider"), normalizeString(toolArgs.accountID, "accountID")))));
-          if (toolName === "ListAccountChats") return Response.json(successResult(id, textResult(await app.listAccountChats(
-            normalizeString(toolArgs.provider, "provider"),
-            normalizeString(toolArgs.accountID, "accountID"),
-            { limit: normalizeLimit(toolArgs.limit, 20, 50), refresh: normalizeBoolean(toolArgs.refresh, true) },
-          ))));
-          if (toolName === "ListSessionBindings") return Response.json(successResult(id, textResult(await app.listSessionBindings())));
-          if (toolName === "UpsertSessionBinding") return Response.json(successResult(id, textResult(await app.upsertSessionBinding({
-            sessionBindingID: normalizeString(toolArgs.sessionBindingID, "sessionBindingID"),
-            enabled: typeof toolArgs.enabled === "boolean" ? toolArgs.enabled : undefined,
-            runtimeID: typeof toolArgs.runtimeID === "string" ? toolArgs.runtimeID : undefined,
-            sessionID: typeof toolArgs.sessionID === "string" ? toolArgs.sessionID : undefined,
-            directory: typeof toolArgs.directory === "string" ? toolArgs.directory : undefined,
-            displayID: typeof toolArgs.displayID === "string" ? toolArgs.displayID : undefined,
-            title: typeof toolArgs.title === "string" ? toolArgs.title : undefined,
-            model: typeof toolArgs.model === "string" ? toolArgs.model : undefined,
-          }))));
-          if (toolName === "CreateSessionBinding") return Response.json(successResult(id, textResult(await app.createSessionBinding({
-            sessionBindingID: normalizeString(toolArgs.sessionBindingID, "sessionBindingID"),
-            runtimeID: normalizeString(toolArgs.runtimeID, "runtimeID"),
-            directory: normalizeString(toolArgs.directory, "directory"),
-            displayID: typeof toolArgs.displayID === "string" ? toolArgs.displayID : undefined,
-            title: typeof toolArgs.title === "string" ? toolArgs.title : undefined,
-            content: typeof toolArgs.content === "string" ? toolArgs.content : undefined,
-            model: typeof toolArgs.model === "string" ? toolArgs.model : undefined,
-            enabled: typeof toolArgs.enabled === "boolean" ? toolArgs.enabled : undefined,
-          }))));
-          if (toolName === "DeleteSessionBinding") return Response.json(successResult(id, textResult(await app.deleteSessionBinding(normalizeString(toolArgs.sessionBindingID, "sessionBindingID")))));
-          if (toolName === "ListRoutes") return Response.json(successResult(id, textResult(await app.listRoutes())));
-          if (toolName === "GetRoute") return Response.json(successResult(id, textResult(await app.getRoute(normalizeString(toolArgs.routeID, "routeID")))));
-          if (toolName === "UpsertRoute") return Response.json(successResult(id, textResult(await app.upsertRoute({
-            provider: normalizeString(toolArgs.provider, "provider"),
-            accountID: normalizeString(toolArgs.accountID, "accountID"),
-            chatID: normalizeString(toolArgs.chatID, "chatID"),
-            chatName: typeof toolArgs.chatName === "string" ? toolArgs.chatName : undefined,
-            enabled: typeof toolArgs.enabled === "boolean" ? toolArgs.enabled : undefined,
-            sessionBindingID: typeof toolArgs.sessionBindingID === "string" ? toolArgs.sessionBindingID : undefined,
-          }))));
-          if (toolName === "DeleteRoute") return Response.json(successResult(id, textResult(await app.deleteRoute(normalizeString(toolArgs.routeID, "routeID")))));
-          if (toolName === "ListRouteMessages") return Response.json(successResult(id, textResult(await app.listRouteMessages(normalizeString(toolArgs.routeID, "routeID"), { limit: normalizeLimit(toolArgs.limit, 20, 50), refresh: normalizeBoolean(toolArgs.refresh, true) }))));
-          if (toolName === "SendRouteTextMessage") return Response.json(successResult(id, textResult(await app.sendRouteTextMessage(normalizeString(toolArgs.routeID, "routeID"), normalizeString(toolArgs.text, "text")))));
-          if (toolName === "RequestUpload") return Response.json(successResult(id, textResult(await app.requestUpload({
-            type: normalizeString(toolArgs.type, "type") as "image" | "file",
-            routeID: typeof toolArgs.routeID === "string" ? toolArgs.routeID : undefined,
-          }))));
-          if (toolName === "SendRouteUpload") return Response.json(successResult(id, textResult(await app.sendRouteUpload(normalizeString(toolArgs.routeID, "routeID"), normalizeString(toolArgs.uploadID, "uploadID")))));
-          if (toolName === "RequestDownload") return Response.json(successResult(id, textResult(await app.requestDownload({
-            routeID: normalizeString(toolArgs.routeID, "routeID"),
-            messageID: normalizeString(toolArgs.messageID, "messageID"),
-            type: normalizeString(toolArgs.type, "type") as "image" | "file" | "audio" | "media",
-          }))));
-          if (toolName === "ListRecentRouteEvents") return Response.json(successResult(id, textResult(await app.listRecentRouteEvents(normalizeString(toolArgs.routeID, "routeID"), normalizeLimit(toolArgs.limit, 20, 100)))));
-          return Response.json(errorResult(id, -32601, `unknown tool: ${toolName || "<empty>"}`));
+          return Response.json(successResult(id, textResult(await input.handler(app, toolName, toolArgs))));
         } catch (error) {
-          return Response.json(errorResult(id, -32602, error instanceof Error ? error.message : String(error)));
+          const message = error instanceof Error ? error.message : String(error);
+          const code = message.startsWith("unknown tool:") ? -32601 : -32602;
+          return Response.json(errorResult(id, code, message));
         }
       }
       if (id === undefined || id === null) return new Response(null, { status: 202 });
       return Response.json(errorResult(id, -32601, `method not found: ${method}`));
     },
   };
+}
+
+export function createImGatewayControlSurface(app: ImBridgeApp): McpPlugin {
+  return createSurface({
+    id: "im-gateway.control",
+    routeSegment: "im_gateway_control",
+    serverName: "IM-gateway control",
+    description: "IM gateway control surface for accounts, groups, bindings, and routes",
+    tools: CONTROL_TOOLS,
+    handler: handleControlTool,
+  }, app);
+}
+
+export function createImGatewayChatSurface(app: ImBridgeApp): McpPlugin {
+  return createSurface({
+    id: "im-gateway.chat",
+    routeSegment: "im_gateway_chat",
+    serverName: "IM-gateway chat",
+    description: "IM gateway chat surface for route messages, uploads, and downloads",
+    tools: CHAT_TOOLS,
+    handler: handleChatTool,
+  }, app);
 }

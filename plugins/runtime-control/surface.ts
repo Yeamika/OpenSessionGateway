@@ -3,37 +3,37 @@ import { NextResponse } from "next/server.js";
 import type { McpPlugin } from "@opensessiongateway/server-plugin-sdk";
 import { errorResult, parseRpc, successResult, textResult } from "@opensessiongateway/server-plugin-sdk";
 
-import { ADD_PROMPT_TOOL, createAddPromptToolHandler } from "./tools/AddPrompt.ts";
-import { ABORT_CLIENT_SESSION_TOOL, createAbortClientSessionToolHandler } from "./tools/AbortClientSession.ts";
-import { CREATE_NEW_SESSION_TOOL, createCreateNewSessionToolHandler } from "./tools/CreateNewSession.ts";
-import { SPAWN_SESSION_TOOL, createSpawnSessionToolHandler } from "./tools/SpawnSession.ts";
-import { SET_CLIENT_DISPLAY_SESSION_TOOL, createSetClientDisplaySessionToolHandler } from "./tools/SetClientDisplaySession.ts";
-import { GET_SESSION_LAST_USED_MODEL_TOOL, createGetSessionLastUsedModelToolHandler } from "./tools/GetSessionLastUsedModel.ts";
-import { GET_RUNTIME_PERMISSION_TOOL, createGetRuntimePermissionToolHandler } from "./tools/GetRuntimePermission.ts";
-import { LIST_AVAILABLE_MODELS_TOOL, createListAvailableModelsToolHandler } from "./tools/ListAvailableModels.ts";
-import { LIST_CLIENT_SESSIONS_TOOL, createListClientSessionsToolHandler } from "./tools/ListClientSessions.ts";
-import { LIST_CLIENT_INSTANCE_WORKSPACES_TOOL, createListClientInstanceWorkspacesToolHandler } from "./tools/ListClientInstanceWorkspaces.ts";
-import { LIST_CLIENTS_TOOL, createListClientsToolHandler } from "./tools/ListClients.ts";
-import { LIST_RUNTIME_PERMISSIONS_TOOL, createListRuntimePermissionsToolHandler } from "./tools/ListRuntimePermissions.ts";
-import { REQUEST_RUNTIME_TOOL, createRequestRuntimeToolHandler } from "./tools/RequestRuntime.ts";
-import { RELOAD_CLIENT_INSTANCE_WORKSPACE_TOOL, createReloadClientInstanceWorkspaceToolHandler } from "./tools/ReloadClientInstanceWorkspace.ts";
-import { RENAME_CLIENT_SESSION_TOOL, createRenameClientSessionToolHandler } from "./tools/RenameClientSession.ts";
-import { RESOLVE_RUNTIME_PERMISSION_TOOL, createResolveRuntimePermissionToolHandler } from "./tools/ResolveRuntimePermission.ts";
-import type { RuntimeControlServices } from "./types.ts";
+import { ADD_PROMPT_TOOL, createAddPromptToolHandler } from "./tools/AddPrompt.js";
+import { ABORT_CLIENT_SESSION_TOOL, createAbortClientSessionToolHandler } from "./tools/AbortClientSession.js";
+import { CREATE_NEW_SESSION_TOOL, createCreateNewSessionToolHandler } from "./tools/CreateNewSession.js";
+import { SET_CLIENT_DISPLAY_SESSION_TOOL, createSetClientDisplaySessionToolHandler } from "./tools/SetClientDisplaySession.js";
+import { GET_SESSION_LAST_USED_MODEL_TOOL, createGetSessionLastUsedModelToolHandler } from "./tools/GetSessionLastUsedModel.js";
+import { GET_RUNTIME_PERMISSION_TOOL, createGetRuntimePermissionToolHandler } from "./tools/GetRuntimePermission.js";
+import { LIST_RUNTIME_AVAILABLE_MODELS_TOOL, createListRuntimeAvailableModelsToolHandler } from "./tools/ListRuntimeAvailableModels.js";
+import { LIST_CLIENT_DISPLAYS_TOOL, createListClientDisplaysToolHandler } from "./tools/ListClientDisplays.js";
+import { LIST_ACTIVED_SESSIONS_TOOL, createListActivedSessionsToolHandler } from "./tools/ListActivedSessions.js";
+import { LIST_CLIENT_INSTANCE_WORKSPACES_TOOL, createListClientInstanceWorkspacesToolHandler } from "./tools/ListClientInstanceWorkspaces.js";
+import { LIST_RUNTIME_TOOL, createListRuntimeToolHandler } from "./tools/ListRuntime.js";
+import { LIST_RUNTIME_PERMISSIONS_TOOL, createListRuntimePermissionsToolHandler } from "./tools/ListRuntimePermissions.js";
+import { REQUEST_RUNTIME_TOOL, createRequestRuntimeToolHandler } from "./tools/RequestRuntime.js";
+import { RELOAD_CLIENT_INSTANCE_WORKSPACE_TOOL, createReloadClientInstanceWorkspaceToolHandler } from "./tools/ReloadClientInstanceWorkspace.js";
+import { RENAME_CLIENT_SESSION_TOOL, createRenameClientSessionToolHandler } from "./tools/RenameClientSession.js";
+import { RESOLVE_RUNTIME_PERMISSION_TOOL, createResolveRuntimePermissionToolHandler } from "./tools/ResolveRuntimePermission.js";
+import type { RuntimeControlServices } from "./types.js";
 
 const RUNTIME_CONTROL_TOOLS = [
-  LIST_CLIENTS_TOOL,
-  LIST_CLIENT_SESSIONS_TOOL,
+  LIST_RUNTIME_TOOL,
+  LIST_CLIENT_DISPLAYS_TOOL,
+  LIST_ACTIVED_SESSIONS_TOOL,
+  LIST_CLIENT_INSTANCE_WORKSPACES_TOOL,
+  LIST_RUNTIME_AVAILABLE_MODELS_TOOL,
+  GET_SESSION_LAST_USED_MODEL_TOOL,
+  REQUEST_RUNTIME_TOOL,
   CREATE_NEW_SESSION_TOOL,
-  ADD_PROMPT_TOOL,
-  SPAWN_SESSION_TOOL,
   RENAME_CLIENT_SESSION_TOOL,
   SET_CLIENT_DISPLAY_SESSION_TOOL,
   ABORT_CLIENT_SESSION_TOOL,
-  LIST_AVAILABLE_MODELS_TOOL,
-  GET_SESSION_LAST_USED_MODEL_TOOL,
-  LIST_CLIENT_INSTANCE_WORKSPACES_TOOL,
-  REQUEST_RUNTIME_TOOL,
+  ADD_PROMPT_TOOL,
   RELOAD_CLIENT_INSTANCE_WORKSPACE_TOOL,
   LIST_RUNTIME_PERMISSIONS_TOOL,
   GET_RUNTIME_PERMISSION_TOOL,
@@ -42,17 +42,17 @@ const RUNTIME_CONTROL_TOOLS = [
 
 export function createRuntimeControlMcpPlugin(services: RuntimeControlServices): McpPlugin {
   const handleAddPromptTool = createAddPromptToolHandler(services);
-  const handleListClientsTool = createListClientsToolHandler(services);
-  const handleListClientSessionsTool = createListClientSessionsToolHandler(services);
+  const handleListRuntimeTool = createListRuntimeToolHandler(services);
+  const handleListClientDisplaysTool = createListClientDisplaysToolHandler(services);
+  const handleListActivedSessionsTool = createListActivedSessionsToolHandler(services);
+  const handleListClientInstanceWorkspacesTool = createListClientInstanceWorkspacesToolHandler(services);
+  const handleListRuntimeAvailableModelsTool = createListRuntimeAvailableModelsToolHandler(services);
+  const handleGetSessionLastUsedModelTool = createGetSessionLastUsedModelToolHandler(services);
+  const handleRequestRuntimeTool = createRequestRuntimeToolHandler(services);
   const handleCreateNewSessionTool = createCreateNewSessionToolHandler(services);
-  const handleSpawnSessionTool = createSpawnSessionToolHandler(services);
   const handleRenameClientSessionTool = createRenameClientSessionToolHandler(services);
   const handleSetClientDisplaySessionTool = createSetClientDisplaySessionToolHandler(services);
   const handleAbortClientSessionTool = createAbortClientSessionToolHandler(services);
-  const handleListAvailableModelsTool = createListAvailableModelsToolHandler(services);
-  const handleGetSessionLastUsedModelTool = createGetSessionLastUsedModelToolHandler(services);
-  const handleListClientInstanceWorkspacesTool = createListClientInstanceWorkspacesToolHandler(services);
-  const handleRequestRuntimeTool = createRequestRuntimeToolHandler(services);
   const handleReloadClientInstanceWorkspaceTool = createReloadClientInstanceWorkspaceToolHandler(services);
   const handleListRuntimePermissionsTool = createListRuntimePermissionsToolHandler(services);
   const handleGetRuntimePermissionTool = createGetRuntimePermissionToolHandler(services);
@@ -91,20 +91,29 @@ export function createRuntimeControlMcpPlugin(services: RuntimeControlServices):
         : {};
 
       try {
-        if (toolName === "ListClients") {
-          return NextResponse.json(successResult(id, textResult(await handleListClientsTool(toolArgs))));
+        if (toolName === "ListRuntime") {
+          return NextResponse.json(successResult(id, textResult(await handleListRuntimeTool(toolArgs))));
         }
-        if (toolName === "ListClientSessions") {
-          return NextResponse.json(successResult(id, textResult(await handleListClientSessionsTool(toolArgs))));
+        if (toolName === "ListClientDisplays") {
+          return NextResponse.json(successResult(id, textResult(await handleListClientDisplaysTool(toolArgs))));
+        }
+        if (toolName === "ListActivedSessions") {
+          return NextResponse.json(successResult(id, textResult(await handleListActivedSessionsTool(toolArgs))));
+        }
+        if (toolName === "ListClientInstanceWorkspaces") {
+          return NextResponse.json(successResult(id, textResult(await handleListClientInstanceWorkspacesTool(toolArgs))));
+        }
+        if (toolName === "ListRuntimeAvailableModels") {
+          return NextResponse.json(successResult(id, textResult(await handleListRuntimeAvailableModelsTool(toolArgs))));
+        }
+        if (toolName === "GetSessionLastUsedModel") {
+          return NextResponse.json(successResult(id, textResult(await handleGetSessionLastUsedModelTool(toolArgs))));
+        }
+        if (toolName === "RequestRuntime") {
+          return NextResponse.json(successResult(id, textResult(await handleRequestRuntimeTool(toolArgs))));
         }
         if (toolName === "CreateNewSession") {
           return NextResponse.json(successResult(id, textResult(await handleCreateNewSessionTool(toolArgs))));
-        }
-        if (toolName === "AddPrompt") {
-          return NextResponse.json(successResult(id, textResult(await handleAddPromptTool(toolArgs))));
-        }
-        if (toolName === "SpawnSession") {
-          return NextResponse.json(successResult(id, textResult(await handleSpawnSessionTool(toolArgs))));
         }
         if (toolName === "RenameClientSession") {
           return NextResponse.json(successResult(id, textResult(await handleRenameClientSessionTool(toolArgs))));
@@ -115,20 +124,11 @@ export function createRuntimeControlMcpPlugin(services: RuntimeControlServices):
         if (toolName === "AbortClientSession") {
           return NextResponse.json(successResult(id, textResult(await handleAbortClientSessionTool(toolArgs))));
         }
-        if (toolName === "ListAvailableModels") {
-          return NextResponse.json(successResult(id, textResult(await handleListAvailableModelsTool(toolArgs))));
-        }
-        if (toolName === "GetSessionLastUsedModel") {
-          return NextResponse.json(successResult(id, textResult(await handleGetSessionLastUsedModelTool(toolArgs))));
-        }
-        if (toolName === "ListClientInstanceWorkspaces") {
-          return NextResponse.json(successResult(id, textResult(await handleListClientInstanceWorkspacesTool(toolArgs))));
+        if (toolName === "AddPrompt") {
+          return NextResponse.json(successResult(id, textResult(await handleAddPromptTool(toolArgs))));
         }
         if (toolName === "ReloadClientInstanceWorkspace") {
           return NextResponse.json(successResult(id, textResult(await handleReloadClientInstanceWorkspaceTool(toolArgs))));
-        }
-        if (toolName === "RequestRuntime") {
-          return NextResponse.json(successResult(id, textResult(await handleRequestRuntimeTool(toolArgs))));
         }
         if (toolName === "ListRuntimePermissions") {
           return NextResponse.json(successResult(id, textResult(await handleListRuntimePermissionsTool(toolArgs))));

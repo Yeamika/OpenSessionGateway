@@ -1,5 +1,5 @@
-import { normalizePermissionDecision, normalizeString } from "../common.ts";
-import type { RuntimeControlServices } from "../types.ts";
+import { normalizePermissionDecision, normalizeString } from "../common.js";
+import type { RuntimeControlServices } from "../types.js";
 
 export const RESOLVE_RUNTIME_PERMISSION_TOOL = {
   name: "ResolveRuntimePermission",

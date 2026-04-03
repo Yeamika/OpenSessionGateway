@@ -1,6 +1,6 @@
-import { listMailboxItems } from "../mailbox.ts";
-import { normalizeList, normalizeStringArg } from "../common.ts";
-import type { SessionBridgeServices } from "../types.ts";
+import { listMailboxItems } from "../mailbox.js";
+import { normalizeList, normalizeStringArg } from "../common.js";
+import type { SessionBridgeServices } from "../types.js";
 
 export const LIST_MAILBOX_ITEMS_TOOL = {
   name: "ListMailboxItems",

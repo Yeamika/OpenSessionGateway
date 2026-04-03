@@ -1,8 +1,8 @@
 import type { OsgServerPlugin } from "@opensessiongateway/server-plugin-sdk";
 
-import { clearAllMailboxReminderTimers, restoreMailboxReminders, restoreMailboxRemindersForRuntime } from "./mailbox.ts";
-import { createSessionBridgeMcpPlugin } from "./surface.ts";
-import { createSessionBridgeServices } from "./types.ts";
+import { clearAllMailboxReminderTimers, restoreMailboxReminders, restoreMailboxRemindersForRuntime } from "./mailbox.js";
+import { createSessionBridgeMcpPlugin } from "./surface.js";
+import { createSessionBridgeServices } from "./types.js";
 
 const sessionBridgePlugin: OsgServerPlugin = {
   manifest: {

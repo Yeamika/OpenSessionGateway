@@ -1,8 +1,8 @@
 import fs from "node:fs/promises";
 
-import { loadConfig } from "./src/config.ts";
-import { GatewayProviderRegistry } from "./src/provider.ts";
-import { StateStore } from "./src/state.ts";
+import { loadConfig } from "./src/config.js";
+import { GatewayProviderRegistry } from "./src/provider.js";
+import { StateStore } from "./src/state.js";
 
 async function main() {
   const config = loadConfig();

@@ -17,15 +17,14 @@ import {
 
 import { renderPluginAdminPage } from "./page";
 
-export const ADMIN_BIND_HOST = "127.0.0.1";
+export const ADMIN_BIND_HOST = process.env.OSG_ADMIN_BIND_HOST?.trim() || "127.0.0.1";
+const DEFAULT_ADMIN_LISTEN_BACKLOG = 511;
 
 type StartPluginAdminServerOptions = {
+  backlog?: number;
+  host?: string;
   port: number;
 };
-
-function isLocalAddress(address: string | undefined): boolean {
-  return address === "127.0.0.1" || address === "::ffff:127.0.0.1";
-}
 
 function writeJson(res: ServerResponse, status: number, payload: unknown): void {
   res.statusCode = status;
@@ -76,18 +75,22 @@ function isPathInside(parentPath: string, targetPath: string): boolean {
 }
 
 async function fullListPayload(adminPort: number) {
+  const plugins = listPluginSummaries().sort((a, b) => a.id.localeCompare(b.id));
+  const roots = await listPluginAutoloadRoots();
   return {
     ok: true,
+    snapshotAt: new Date().toISOString(),
     adminPort,
     allowedRoots: getAllowedPluginRoots(),
-    plugins: listPluginSummaries(),
-    roots: await listPluginAutoloadRoots(),
+    plugins,
+    roots,
   };
 }
 
 async function statePayload(adminPort: number) {
   const payload = await fullListPayload(adminPort);
   return {
+    snapshotAt: payload.snapshotAt,
     adminPort: payload.adminPort,
     allowedRoots: payload.allowedRoots,
     plugins: payload.plugins,
@@ -95,20 +98,18 @@ async function statePayload(adminPort: number) {
   };
 }
 
-export async function startLocalPluginAdminServer(
+export async function startPluginAdminServer(
   options: StartPluginAdminServerOptions,
 ): Promise<Server> {
   await ensureAutoloadPluginsLoaded();
 
+  const bindHost = options.host?.trim() || ADMIN_BIND_HOST;
+  const backlog = typeof options.backlog === "number" ? options.backlog : DEFAULT_ADMIN_LISTEN_BACKLOG;
+
   const server = createServer(async (req, res) => {
     try {
-      if (!isLocalAddress(req.socket.remoteAddress)) {
-        writeJson(res, 403, { ok: false, error: "forbidden" });
-        return;
-      }
-
       const method = req.method || "GET";
-      const url = new URL(req.url || "/", `http://${ADMIN_BIND_HOST}:${options.port}`);
+      const url = new URL(req.url || "/", `http://${bindHost}:${options.port}`);
 
       if (url.pathname === "/favicon.ico") {
         res.statusCode = 204;
@@ -120,13 +121,17 @@ export async function startLocalPluginAdminServer(
         writeHtml(
           res,
           200,
-          renderPluginAdminPage({ defaultLoadPath: "_examples/echo-surface" }),
+          renderPluginAdminPage(),
         );
         return;
       }
 
       if (method === "GET" && url.pathname === "/api/health") {
-        writeJson(res, 200, { ok: true, adminPort: options.port, bind: ADMIN_BIND_HOST });
+        writeJson(res, 200, {
+          ok: true,
+          adminPort: options.port,
+          bind: bindHost,
+        });
         return;
       }
 
@@ -143,8 +148,8 @@ export async function startLocalPluginAdminServer(
 
         const body = await readJsonBody(req);
         const pluginPath = typeof body.path === "string" ? body.path.trim() : "";
-        const plugin = await loadPluginFromFile(pluginPath);
-        writeJson(res, 200, { ok: true, plugin, ...(await statePayload(options.port)) });
+        const loadedPlugin = await loadPluginFromFile(pluginPath);
+        writeJson(res, 200, { ok: true, loadedPlugin, ...(await statePayload(options.port)) });
         return;
       }
 
@@ -156,8 +161,8 @@ export async function startLocalPluginAdminServer(
 
         const body = await readJsonBody(req);
         const pluginID = typeof body.pluginID === "string" ? body.pluginID.trim() : "";
-        const plugin = await unloadPlugin(pluginID);
-        writeJson(res, 200, { ok: true, plugin, ...(await statePayload(options.port)) });
+        const unloadedPlugin = await unloadPlugin(pluginID);
+        writeJson(res, 200, { ok: true, unloadedPlugin, ...(await statePayload(options.port)) });
         return;
       }
 
@@ -169,8 +174,8 @@ export async function startLocalPluginAdminServer(
 
         const body = await readJsonBody(req);
         const pluginID = typeof body.pluginID === "string" ? body.pluginID.trim() : "";
-        const plugin = await reloadPlugin(pluginID);
-        writeJson(res, 200, { ok: true, plugin, ...(await statePayload(options.port)) });
+        const reloadedPlugin = await reloadPlugin(pluginID);
+        writeJson(res, 200, { ok: true, reloadedPlugin, ...(await statePayload(options.port)) });
         return;
       }
 
@@ -238,7 +243,7 @@ export async function startLocalPluginAdminServer(
 
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
-    server.listen(options.port, ADMIN_BIND_HOST, () => {
+    server.listen(options.port, bindHost, backlog, () => {
       server.off("error", reject);
       resolve();
     });

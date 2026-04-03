@@ -1,5 +1,5 @@
-import { normalizeList, normalizeStringArg } from "../common.ts";
-import type { SessionBridgeServices } from "../types.ts";
+import { normalizeList, normalizeStringArg } from "../common.js";
+import type { SessionBridgeServices } from "../types.js";
 
 export const GET_SESSION_MESSAGES_TOOL = {
   name: "GetSessionMessages",

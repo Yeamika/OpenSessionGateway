@@ -1,8 +1,8 @@
 import type { OsgServerPlugin } from "@opensessiongateway/server-plugin-sdk";
 
-import { ImBridgeApp } from "./src/app.ts";
-import { loadConfig } from "./src/config.ts";
-import { createImBridgeSurface } from "./src/surface.ts";
+import { ImBridgeApp } from "./src/app.js";
+import { loadConfig } from "./src/config.js";
+import { createImGatewayChatSurface, createImGatewayControlSurface } from "./src/surface.js";
 
 const plugin: OsgServerPlugin = {
   manifest: {
@@ -13,7 +13,8 @@ const plugin: OsgServerPlugin = {
   },
   async activate(ctx) {
     const app = new ImBridgeApp(loadConfig(), ctx);
-    ctx.mcp.registerSurface(createImBridgeSurface(app));
+    ctx.mcp.registerSurface(createImGatewayControlSurface(app));
+    ctx.mcp.registerSurface(createImGatewayChatSurface(app));
     await app.start();
     return async () => {
       await app.stop();

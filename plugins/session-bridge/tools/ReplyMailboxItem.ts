@@ -1,6 +1,6 @@
-import { replayMailboxItem } from "../mailbox.ts";
-import { normalizeStringArg } from "../common.ts";
-import type { SessionBridgeServices } from "../types.ts";
+import { replayMailboxItem } from "../mailbox.js";
+import { normalizeStringArg } from "../common.js";
+import type { SessionBridgeServices } from "../types.js";
 
 export const REPLY_MAILBOX_ITEM_TOOL = {
   name: "ReplyMailboxItem",

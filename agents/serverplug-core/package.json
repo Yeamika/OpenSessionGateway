@@ -5,6 +5,9 @@
   "scripts": {
     "dev": "node run.mjs dev",
     "build": "node run.mjs build",
+    "build:runtime-control": "node run.mjs build-runtime-control",
+    "build:session-bridge": "node run.mjs build-session-bridge",
+    "build:timer-scheduler": "node run.mjs build-timer-scheduler",
     "lint": "node run.mjs lint",
     "build:sdk": "node run.mjs build-sdk"
   }

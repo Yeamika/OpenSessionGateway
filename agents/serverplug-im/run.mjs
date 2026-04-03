@@ -20,8 +20,18 @@ const ensure = [
 
 if (mode === "probe") {
   await runNpm({
-    cwd: path.join(repoRoot, "server"),
-    args: ["exec", "tsx", "../plugins/IM-gateway/probe.ts"],
+    cwd: path.join(repoRoot, "plugins", "IM-gateway"),
+    args: ["run", "probe"],
+    env: {
+      OSG_SERVER_RUNTIME_DIR: serverRuntimeDir,
+      IM_GATEWAY_STATE_FILE: stateFile,
+    },
+    ensure,
+  });
+} else if (mode === "build") {
+  await runNpm({
+    cwd: path.join(repoRoot, "plugins", "IM-gateway"),
+    args: ["run", "build"],
     env: {
       OSG_SERVER_RUNTIME_DIR: serverRuntimeDir,
       IM_GATEWAY_STATE_FILE: stateFile,
@@ -31,7 +41,6 @@ if (mode === "probe") {
 } else {
   const commands = {
     dev: ["run", "dev"],
-    build: ["run", "build"],
     lint: ["run", "lint"],
   };
 
@@ -39,13 +48,13 @@ if (mode === "probe") {
     throw new Error(`Unsupported serverplug-im mode: ${mode}`);
   }
 
-    await runNpm({
-      cwd: path.join(repoRoot, "server"),
-      args: commands[mode],
-      env: {
-        OSG_SERVER_RUNTIME_DIR: serverRuntimeDir,
-        IM_GATEWAY_STATE_FILE: stateFile,
-      },
-      ensure,
-    });
+  await runNpm({
+    cwd: path.join(repoRoot, "server"),
+    args: commands[mode],
+    env: {
+      OSG_SERVER_RUNTIME_DIR: serverRuntimeDir,
+      IM_GATEWAY_STATE_FILE: stateFile,
+    },
+    ensure,
+  });
 }

@@ -1,5 +1,5 @@
-import { normalizeList, normalizeRegex, normalizeString } from "../common.ts";
-import type { RuntimeControlServices } from "../types.ts";
+import { normalizeList, normalizeRegex, normalizeString } from "../common.js";
+import type { RuntimeControlServices } from "../types.js";
 
 export const LIST_CLIENT_INSTANCE_WORKSPACES_TOOL = {
   name: "ListClientInstanceWorkspaces",

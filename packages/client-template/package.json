@@ -5,6 +5,7 @@
   "private": true,
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
     "start": "node dist/index.js",
     "test:osg": "npm run build && node dist/osg-smoke-test.js",
     "cli": "npm run build && node dist/cli.js",

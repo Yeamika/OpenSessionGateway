@@ -3,17 +3,11 @@
     "target": "ES2022",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
-    "baseUrl": "..",
-    "paths": {
-      "@opensessiongateway/server-plugin-sdk": ["packages/server-plugin-sdk/src/index.ts"]
-    },
-    "allowImportingTsExtensions": true,
-    "noEmit": true,
+    "declaration": true,
     "strict": false,
     "skipLibCheck": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
     "lib": ["ES2022", "DOM"]
-  },
-  "include": [
-    "**/*.ts"
-  ]
+  }
 }

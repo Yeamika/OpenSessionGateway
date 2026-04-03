@@ -1,7 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { Readable } from "node:stream";
 
-import type { ImBridgeConfig } from "./config.ts";
+import type { ImBridgeConfig } from "./config.js";
 import type {
   GatewayAccount,
   GatewayChatMember,
@@ -11,8 +11,8 @@ import type {
   GatewayResourceType,
   GatewaySendMessageResult,
   GatewayUserIDType,
-} from "./types.ts";
-import { createFeishuGatewayProvider } from "../plugins/feishu/index.ts";
+} from "./types.js";
+import { createFeishuGatewayProvider } from "../plugins/feishu/index.js";
 
 export type GatewayProviderInboundEvent = {
   messageID: string;

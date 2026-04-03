@@ -1,7 +1,7 @@
 import type { OsgServerPlugin } from "@opensessiongateway/server-plugin-sdk";
 
-import { disposeTimers, restoreAllTimers, restoreTimersForRuntime } from "./scheduler.ts";
-import { createTimerManagerMcpPlugin, createTimerSchedulerMcpPlugin } from "./surface.ts";
+import { disposeTimers, restoreAllTimers, restoreTimersForRuntime } from "./scheduler.js";
+import { createTimerManagerMcpPlugin, createTimerSchedulerMcpPlugin } from "./surface.js";
 
 const timerSchedulerPlugin: OsgServerPlugin = {
   manifest: {
