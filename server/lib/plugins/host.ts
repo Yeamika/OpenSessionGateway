@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import { createRequire } from "node:module";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { Worker } from "node:worker_threads";
@@ -164,6 +165,13 @@ export type PluginSource =
   | {
       kind: "file";
       requestedPath: string;
+      absolutePath: string;
+      sourcePath: string;
+    }
+  | {
+      kind: "package";
+      packageName: string;
+      packagePath: string;
       absolutePath: string;
     };
 
@@ -452,6 +460,7 @@ export type PluginSummary = {
   description: string;
   sourceKind: PluginSource["kind"];
   sourcePath: string | null;
+  sourceSpecifier: string | null;
   locked: boolean;
   loadedAt: string;
   routeSegments: string[];
@@ -890,7 +899,18 @@ function toPluginSummary(record: PluginRecord): PluginSummary {
     name: record.manifest.name || record.manifest.id,
     description: record.manifest.description || "",
     sourceKind: record.source.kind,
-    sourcePath: record.source.kind === "file" ? record.source.absolutePath : null,
+    sourcePath:
+      record.source.kind === "file"
+        ? record.source.sourcePath
+        : record.source.kind === "package"
+          ? record.source.packagePath
+          : null,
+    sourceSpecifier:
+      record.source.kind === "file"
+        ? record.source.requestedPath
+        : record.source.kind === "package"
+          ? record.source.packageName
+          : null,
     locked: record.locked,
     loadedAt: record.loadedAt,
     routeSegments: routeSegmentsForPlugin(record.manifest.id),
@@ -1316,6 +1336,10 @@ function configuredPluginRoots(): string[] {
   return [...new Set(values.map((item) => path.resolve(item)))];
 }
 
+function createRuntimeRequire() {
+  return createRequire(pathToFileURL(path.join(process.cwd(), "package.json")).href);
+}
+
 function isInsideRoot(root: string, targetPath: string): boolean {
   const relative = path.relative(root, targetPath);
   return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
@@ -1336,6 +1360,16 @@ async function isDirectory(targetPath: string): Promise<boolean> {
     return stats.isDirectory();
   } catch {
     return false;
+  }
+}
+
+async function findPackageDirectory(startPath: string): Promise<string | null> {
+  let current = path.resolve(startPath);
+  while (true) {
+    if (await isFile(path.join(current, "package.json"))) return current;
+    const parent = path.dirname(current);
+    if (parent === current) return null;
+    current = parent;
   }
 }
 
@@ -1419,6 +1453,39 @@ async function resolvePluginEntry(requestedPath: string): Promise<string> {
   }
 
   throw new Error(`plugin entry not found or outside allowed roots: ${clean}`);
+}
+
+async function resolveInstalledPluginEntry(packageName: string): Promise<{
+  packageName: string;
+  packagePath: string;
+  absolutePath: string;
+}> {
+  const clean = packageName.trim();
+  if (!clean) throw new Error("plugin package name is required");
+
+  let resolvedEntry: string;
+  try {
+    resolvedEntry = createRuntimeRequire().resolve(clean);
+  } catch {
+    throw new Error(`plugin package not found: ${clean}`);
+  }
+
+  const packagePath = await findPackageDirectory(path.dirname(resolvedEntry));
+  if (!packagePath) {
+    throw new Error(`plugin package root not found: ${clean}`);
+  }
+
+  const explicitEntry = await readPackageEntryFromDirectory(packagePath);
+  const absolutePath = explicitEntry ?? path.resolve(resolvedEntry);
+  if (!(await isFile(absolutePath))) {
+    throw new Error(`plugin package entry not found: ${clean}`);
+  }
+
+  return {
+    packageName: clean,
+    packagePath,
+    absolutePath,
+  };
 }
 
 function workerRuntimePath(): string {
@@ -2009,7 +2076,7 @@ async function requestWorkerDeactivation(record: WorkerPluginRecord): Promise<vo
 
 function createWorkerRecord(
   manifest: OsgServerPluginManifest,
-  source: PluginSource & { kind: "file" },
+  source: Extract<PluginSource, { kind: "file" | "package" }>,
   worker: Worker,
 ): WorkerPluginRecord {
   return {
@@ -2083,16 +2150,17 @@ async function waitForWorkerLoaded(worker: Worker, requestedPath: string): Promi
   });
 }
 
-async function activateWorkerPlugin(source: PluginSource & { kind: "file" }): Promise<PluginSummary> {
+async function activateWorkerPlugin(source: Extract<PluginSource, { kind: "file" | "package" }>): Promise<PluginSummary> {
+  const requestedSource = source.kind === "package" ? source.packageName : source.requestedPath;
   const worker = new Worker(pathToFileURL(workerRuntimePath()), {
     execArgv: ["--import", "tsx"],
     workerData: {
-      requestedPath: source.requestedPath,
+      requestedPath: requestedSource,
       absolutePath: source.absolutePath,
     },
   });
 
-  const manifest = await waitForWorkerLoaded(worker, source.requestedPath);
+  const manifest = await waitForWorkerLoaded(worker, requestedSource);
   if (hostState.plugins.has(manifest.id)) {
     worker.postMessage({
       type: "activate_ack",
@@ -2226,7 +2294,17 @@ export async function registerBuiltinPlugin(plugin: OsgServerPlugin): Promise<Pl
 
 export async function loadPluginFromFile(requestedPath: string): Promise<PluginSummary> {
   const absolutePath = await resolvePluginEntry(requestedPath);
-  return activateWorkerPlugin({ kind: "file", requestedPath, absolutePath });
+  return activateWorkerPlugin({ kind: "file", requestedPath, absolutePath, sourcePath: absolutePath });
+}
+
+export async function loadPluginFromPackage(packageName: string): Promise<PluginSummary> {
+  const resolved = await resolveInstalledPluginEntry(packageName);
+  return activateWorkerPlugin({
+    kind: "package",
+    packageName: resolved.packageName,
+    packagePath: resolved.packagePath,
+    absolutePath: resolved.absolutePath,
+  });
 }
 
 export async function unloadPlugin(pluginID: string): Promise<PluginSummary> {
@@ -2262,11 +2340,14 @@ export async function reloadPlugin(pluginID: string): Promise<PluginSummary> {
   const record = hostState.plugins.get(clean);
   if (!record) throw new Error(`plugin not loaded: ${clean}`);
   if (record.locked) throw new Error(`plugin cannot be reloaded: ${clean}`);
-  if (record.source.kind !== "file") throw new Error(`plugin has no file source: ${clean}`);
+  if (record.source.kind === "builtin") throw new Error(`plugin has no reloadable source: ${clean}`);
 
-  const { absolutePath } = record.source;
+  const source = record.source;
   await unloadPlugin(clean);
-  return loadPluginFromFile(absolutePath);
+  if (source.kind === "package") {
+    return loadPluginFromPackage(source.packageName);
+  }
+  return loadPluginFromFile(source.requestedPath);
 }
 
 export function emitRuntimeConnectEvent(event: RuntimeConnectEvent): void {

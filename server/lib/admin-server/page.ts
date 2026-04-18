@@ -481,6 +481,48 @@ export function renderPluginAdminPage(): string {
         }
 
         autoloadRootsNode.innerHTML = roots.map((root) => {
+          const entries = (root.entries || []).map((entry) => {
+            const loaded = (plugins || []).find((plugin) => {
+              if (entry.type === 'package') {
+                return plugin.sourceKind === 'package' && plugin.sourceSpecifier === entry.spec;
+              }
+              return plugin.sourceKind === 'file' && plugin.sourcePath && plugin.sourcePath.indexOf(entry.resolved) === 0;
+            });
+            const badges = [
+              '<span class="badge">' + entry.type + '</span>',
+              loaded ? '<span class="badge locked">loaded</span>' : '<span class="badge">not loaded</span>',
+            ];
+            const actionButtons = loaded
+              ? [
+                  '<button class="secondary" data-action="package-reload" data-plugin-id="' + loaded.id + '">Reload</button>',
+                  '<button class="danger" data-action="package-unload" data-plugin-id="' + loaded.id + '">Unload</button>',
+                ].join('')
+              : entry.type === 'package'
+                ? '<button data-action="package-load" data-package-name="' + entry.spec + '">Load</button>'
+                : '<button data-action="package-load" data-package-path="' + entry.resolved + '">Load</button>';
+            const loadedMeta = loaded
+              ? '<div><span class="label">Loaded surfaces</span><div>' + ((loaded.routeSegments || []).length
+                ? loaded.routeSegments.map((item) => '<span class="surface-chip mono">' + item + '</span>').join('')
+                : '<span class="surface-chip">No MCP surfaces</span>') + '</div></div>'
+              : '<div><span class="label">Loaded surfaces</span><div class="surface-chip">-</div></div>';
+
+            return [
+              '<article class="autoload-package">',
+              '<div class="autoload-package-head">',
+              '<div class="plugin-title">',
+              '<div class="plugin-name-row"><h3>' + entry.spec + '</h3>' + (loaded ? '<span class="badge mono">' + loaded.id + '</span>' : '') + '</div>',
+              '<div class="badge-row">' + badges.join('') + '</div>',
+              '</div>',
+              '<div class="plugin-actions">' + actionButtons + '</div>',
+              '</div>',
+              '<div class="plugin-meta">',
+              '<div><span class="label">Resolved</span><div class="plain-mono">' + entry.resolved + '</div></div>',
+              loadedMeta,
+              '</div>',
+              '</article>',
+            ].join('');
+          }).join('');
+
           const packages = (root.packages || []).map((pkg) => {
             const loaded = (plugins || []).find((plugin) => plugin.sourcePath && plugin.sourcePath.indexOf(pkg.packagePath) === 0);
             const badges = [
@@ -551,6 +593,7 @@ export function renderPluginAdminPage(): string {
             '<div class="root-meta">',
             '<div><span class="label">Config file</span><div class="plain-mono">' + root.configPath + '</div></div>',
             '</div>',
+            entries ? '<div class="autoload-packages">' + entries + '</div>' : '',
             '<div class="autoload-packages">' + (packages || '<div class="empty">No plugin packages found in this root.</div>') + '</div>',
             '</section>',
           ].join('');
@@ -572,11 +615,12 @@ export function renderPluginAdminPage(): string {
 
         if (action === 'package-load') {
           const packagePath = target.getAttribute('data-package-path');
-          if (!packagePath) return;
+          const packageName = target.getAttribute('data-package-name');
+          if (!packagePath && !packageName) return;
           target.disabled = true;
-          setStatus('Loading ' + packagePath + '...', '');
+          setStatus('Loading ' + (packageName || packagePath) + '...', '');
           try {
-            await callApi('/api/plugins/load', { path: packagePath });
+            await callApi('/api/plugins/load', packageName ? { packageName } : { path: packagePath });
             setStatus('Plugin loaded.', 'success');
             await refresh();
           } catch (error) {

@@ -77,7 +77,6 @@ const rest = process.argv.slice(3)
 const commands = {
   dev: ["run", "dev"],
   build: ["run", "build"],
-  start: ["run", "start"],
   "start:ws": ["run", "start:ws"],
   "start:next": ["run", "start:next"],
   "prisma:generate": ["run", "prisma:generate"],
@@ -123,20 +122,28 @@ async function sync(src, dst) {
   await fsp.copyFile(src, dst)
 }
 
-function nodeModulesRoot() {
-  let dir = root
-  while (true) {
-    const hit = path.join(dir, "node_modules")
-    if (fs.existsSync(path.join(hit, "next", "package.json"))) return hit
-    const parent = path.dirname(dir)
-    if (parent === dir) break
-    dir = parent
-  }
-  throw new Error("Unable to locate installed dependencies for @opensessiongateway/server")
+async function run(command, args, options) {
+  await new Promise((resolve, reject) => {
+    const child = spawn(command, args, {
+      ...options,
+      stdio: "inherit",
+    })
+    child.on("exit", (code, signal) => {
+      if (signal) {
+        reject(new Error(command + " terminated with signal " + signal))
+        return
+      }
+      if ((code ?? 1) !== 0) {
+        reject(new Error(command + " exited with code " + (code ?? 1)))
+        return
+      }
+      resolve(undefined)
+    })
+    child.on("error", reject)
+  })
 }
 
 async function ensureWritableNodeModules(dir) {
-  const src = nodeModulesRoot()
   const dst = path.join(dir, "node_modules")
   const metaPath = path.join(dir, runtimeMetaFile)
   const expected = {
@@ -160,7 +167,12 @@ async function ensureWritableNodeModules(dir) {
 
   if (shouldSync) {
     await fsp.rm(dst, { force: true, recursive: true })
-    await fsp.cp(src, dst, { force: true, recursive: true })
+    await run("npm", ["install", "--package-lock=false"], {
+      cwd: dir,
+      env: {
+        ...process.env,
+      },
+    })
     await fsp.writeFile(metaPath, JSON.stringify(expected, null, 2) + "\\n", "utf8")
   }
 }
@@ -178,7 +190,7 @@ async function runtimeRoot() {
   return dir
 }
 
-if (!commands[mode]) {
+if (!(mode === "start" || commands[mode])) {
   process.stderr.write(\`Unsupported osg-server mode: \${mode}\\n\`)
   process.exit(1)
 }
@@ -194,24 +206,16 @@ if (mode === "build" && !env.REDIS_URL) {
   env.REDIS_URL = "redis://127.0.0.1:6379"
 }
 
-const child = spawn("npm", [...commands[mode], ...rest], {
-  cwd: dir,
-  env,
-  stdio: "inherit",
-})
+const steps = mode === "start"
+  ? [["run", "build"], ["run", "start:ws", ...rest]]
+  : [[...commands[mode], ...rest]]
 
-child.on("exit", (code, signal) => {
-  if (signal) {
-    process.kill(process.pid, signal)
-    return
-  }
-  process.exit(code ?? 1)
-})
-
-child.on("error", (error) => {
-  process.stderr.write(String(error) + "\\n")
-  process.exit(1)
-})
+for (const step of steps) {
+  await run("npm", step, {
+    cwd: dir,
+    env,
+  })
+}
 `
 }
 
@@ -323,7 +327,7 @@ function packageJson(src) {
       postinstall: "npm run prisma:generate",
       dev: "tsx --tsconfig tsconfig.json server.ts",
       "dev:next": src.scripts["dev:next"],
-      build: "npm run prisma:generate && next build --webpack",
+      build: src.scripts.build,
       start: src.scripts.start,
       "start:ws": "cross-env NODE_ENV=production tsx --tsconfig tsconfig.json server.ts",
       "start:next": src.scripts["start:next"],

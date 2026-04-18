@@ -5,6 +5,7 @@ import {
   getAllowedPluginRoots,
   listPluginSummaries,
   loadPluginFromFile,
+  loadPluginFromPackage,
   reloadPlugin,
   unloadPlugin,
 } from "@/lib/plugins/host";
@@ -148,7 +149,10 @@ export async function startPluginAdminServer(
 
         const body = await readJsonBody(req);
         const pluginPath = typeof body.path === "string" ? body.path.trim() : "";
-        const loadedPlugin = await loadPluginFromFile(pluginPath);
+        const packageName = typeof body.packageName === "string" ? body.packageName.trim() : "";
+        const loadedPlugin = packageName
+          ? await loadPluginFromPackage(packageName)
+          : await loadPluginFromFile(pluginPath);
         writeJson(res, 200, { ok: true, loadedPlugin, ...(await statePayload(options.port)) });
         return;
       }

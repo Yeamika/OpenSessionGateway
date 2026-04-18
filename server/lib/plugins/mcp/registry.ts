@@ -7,6 +7,7 @@ import {
   listRegisteredMcpPlugins,
   listPluginSummaries,
   loadPluginFromFile,
+  loadPluginFromPackage,
   unloadPlugin,
 } from "@/lib/plugins/host";
 
@@ -28,10 +29,20 @@ function parsePluginNameSet(raw: string | undefined): Set<string> {
 type RootAutoloadConfig = {
   allow: Set<string>;
   deny: Set<string>;
+  entries: PluginAutoloadEntryConfig[];
   hasAllowList: boolean;
   hasDenyList: boolean;
   exists: boolean;
   configPath: string;
+};
+
+export type PluginAutoloadEntryConfig = {
+  type: "path" | "package";
+  spec: string;
+};
+
+export type PluginAutoloadEntry = PluginAutoloadEntryConfig & {
+  resolved: string;
 };
 
 function envAutoloadConfig() {
@@ -49,6 +60,7 @@ async function readRootAutoloadConfig(root: string): Promise<RootAutoloadConfig>
       autoload?: {
         allow?: unknown;
         deny?: unknown;
+        entries?: unknown;
       };
     };
 
@@ -60,10 +72,24 @@ async function readRootAutoloadConfig(root: string): Promise<RootAutoloadConfig>
     const rawDeny = Array.isArray(parsed.autoload?.deny)
       ? parsed.autoload?.deny.filter((item): item is string => typeof item === "string")
       : [];
+    const rawEntries = Array.isArray(parsed.autoload?.entries) ? parsed.autoload.entries : [];
+    const entries = rawEntries.flatMap((entry): PluginAutoloadEntryConfig[] => {
+      if (typeof entry === "string" && entry.trim()) {
+        return [{ type: "path", spec: entry.trim() }];
+      }
+      if (!entry || typeof entry !== "object") return [];
+      const type = (entry as { type?: unknown }).type;
+      const spec = (entry as { spec?: unknown }).spec;
+      if ((type === "path" || type === "package") && typeof spec === "string" && spec.trim()) {
+        return [{ type, spec: spec.trim() }];
+      }
+      return [];
+    });
 
     return {
       allow: new Set(rawAllow.map((item) => item.trim()).filter(Boolean)),
       deny: new Set(rawDeny.map((item) => item.trim()).filter(Boolean)),
+      entries,
       hasAllowList,
       hasDenyList,
       exists: true,
@@ -74,6 +100,7 @@ async function readRootAutoloadConfig(root: string): Promise<RootAutoloadConfig>
       return {
         allow: new Set<string>(),
         deny: new Set<string>(),
+        entries: [],
         hasAllowList: false,
         hasDenyList: false,
         exists: false,
@@ -130,25 +157,51 @@ export type PluginAutoloadRoot = {
   configExists: boolean;
   allow: string[];
   deny: string[];
+  entries: PluginAutoloadEntry[];
   hasAllowList: boolean;
   packages: PluginAutoloadPackage[];
 };
+
+type AutoloadLoadTarget =
+  | { type: "path"; spec: string; resolved: string }
+  | { type: "package"; spec: string; resolved: string };
+
+function resolveEntryReference(rootPath: string, entry: PluginAutoloadEntryConfig): PluginAutoloadEntry {
+  return {
+    type: entry.type,
+    spec: entry.spec,
+    resolved: entry.type === "path"
+      ? path.resolve(rootPath, entry.spec)
+      : entry.spec,
+  };
+}
+
+function pluginMatchesEntry(plugin: { sourceKind: string; sourcePath: string | null; sourceSpecifier?: string | null }, entry: AutoloadLoadTarget): boolean {
+  if (entry.type === "package") {
+    return plugin.sourceKind === "package" && plugin.sourceSpecifier === entry.spec;
+  }
+  return plugin.sourceKind === "file" && !!plugin.sourcePath && isPathInside(entry.resolved, plugin.sourcePath);
+}
 
 async function writeRootAutoloadConfig(rootPath: string, config: RootAutoloadConfig): Promise<void> {
   const payload: {
     autoload?: {
       allow?: string[];
       deny?: string[];
+      entries?: PluginAutoloadEntryConfig[];
     };
   } = {};
 
-  if (config.hasAllowList || config.deny.size > 0 || config.hasDenyList) {
+  if (config.hasAllowList || config.deny.size > 0 || config.hasDenyList || config.entries.length > 0) {
     payload.autoload = {};
     if (config.hasAllowList) {
       payload.autoload.allow = [...config.allow].sort((a, b) => a.localeCompare(b));
     }
     if (config.deny.size > 0 || config.hasDenyList) {
       payload.autoload.deny = [...config.deny].sort((a, b) => a.localeCompare(b));
+    }
+    if (config.entries.length > 0) {
+      payload.autoload.entries = config.entries.map((entry) => ({ type: entry.type, spec: entry.spec }));
     }
   }
 
@@ -210,6 +263,7 @@ export async function listPluginAutoloadRoots(): Promise<PluginAutoloadRoot[]> {
       configExists: config.exists,
       allow: [...config.allow].sort((a, b) => a.localeCompare(b)),
       deny: [...config.deny].sort((a, b) => a.localeCompare(b)),
+      entries: config.entries.map((entry) => resolveEntryReference(root, entry)),
       hasAllowList: config.hasAllowList,
       packages,
     });
@@ -270,7 +324,7 @@ export async function applyPluginAutoloadConfig(): Promise<PluginAutoloadApplyRe
   const summaries = listPluginSummaries();
 
   const unloadIDs = new Set<string>();
-  const loadPaths: string[] = [];
+  const loadTargets: AutoloadLoadTarget[] = [];
 
   for (const root of roots) {
     for (const pkg of root.packages) {
@@ -282,13 +336,21 @@ export async function applyPluginAutoloadConfig(): Promise<PluginAutoloadApplyRe
         for (const plugin of matched) {
           unloadIDs.add(plugin.id);
         }
-        loadPaths.push(pkg.packagePath);
+        loadTargets.push({ type: "path", spec: pkg.packagePath, resolved: pkg.packagePath });
         continue;
       }
 
       for (const plugin of matched) {
         unloadIDs.add(plugin.id);
       }
+    }
+
+    for (const entry of root.entries) {
+      const matched = summaries.filter((plugin) => pluginMatchesEntry(plugin, entry));
+      for (const plugin of matched) {
+        unloadIDs.add(plugin.id);
+      }
+      loadTargets.push(entry);
     }
   }
 
@@ -299,8 +361,11 @@ export async function applyPluginAutoloadConfig(): Promise<PluginAutoloadApplyRe
   }
 
   const loaded: string[] = [];
-  for (const pluginPath of [...new Set(loadPaths)].sort((a, b) => a.localeCompare(b))) {
-    const plugin = await loadPluginFromFile(pluginPath);
+  for (const target of [...new Map(loadTargets.map((item) => [`${item.type}:${item.resolved}`, item])).values()]
+    .sort((a, b) => a.resolved.localeCompare(b.resolved))) {
+    const plugin = target.type === "package"
+      ? await loadPluginFromPackage(target.spec)
+      : await loadPluginFromFile(target.resolved);
     loaded.push(plugin.id);
   }
 
@@ -311,7 +376,7 @@ export async function applyPluginAutoloadConfig(): Promise<PluginAutoloadApplyRe
   };
 }
 
-async function listAutoloadEntries(root: string): Promise<string[]> {
+async function listAutoloadEntries(root: string): Promise<AutoloadLoadTarget[]> {
   try {
     const config = await readRootAutoloadConfig(root);
     const envConfig = envAutoloadConfig();
@@ -329,10 +394,17 @@ async function listAutoloadEntries(root: string): Promise<string[]> {
           envAllow: envConfig.allow,
           envDeny: envConfig.deny,
         });
-        return enabled ? packagePath : null;
+        return enabled ? ({ type: "path", spec: packagePath, resolved: packagePath } satisfies AutoloadLoadTarget) : null;
       }));
 
-    return candidates.filter((item): item is string => Boolean(item)).sort((a, b) => a.localeCompare(b));
+    const entries: AutoloadLoadTarget[] = candidates.filter(
+      (item): item is { type: "path"; spec: string; resolved: string } => Boolean(item),
+    );
+    for (const entry of config.entries) {
+      entries.push(resolveEntryReference(root, entry));
+    }
+    return [...new Map(entries.map((item) => [`${item.type}:${item.resolved}`, item])).values()]
+      .sort((a, b) => a.resolved.localeCompare(b.resolved));
   } catch (error) {
     if (error instanceof Error && (error as NodeJS.ErrnoException).code === "ENOENT") {
       return [];
@@ -351,10 +423,14 @@ export async function ensureAutoloadPluginsLoaded(): Promise<void> {
       const entries = await listAutoloadEntries(root);
       for (const entry of entries) {
         const alreadyLoaded = listPluginSummaries().some((plugin) =>
-          plugin.sourcePath ? isPathInside(entry, plugin.sourcePath) : false,
+          pluginMatchesEntry(plugin, entry),
         );
         if (alreadyLoaded) continue;
-        await loadPluginFromFile(entry);
+        if (entry.type === "package") {
+          await loadPluginFromPackage(entry.spec);
+          continue;
+        }
+        await loadPluginFromFile(entry.resolved);
       }
     }
     autoloadComplete = true;
