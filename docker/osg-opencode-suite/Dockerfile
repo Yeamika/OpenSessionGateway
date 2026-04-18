@@ -1,4 +1,4 @@
-FROM postgres:15
+FROM node:24-bookworm
 
 RUN apt-get update \
   && apt-get install -y --no-install-recommends \
@@ -8,17 +8,21 @@ RUN apt-get update \
     curl \
     git \
     jq \
-    nodejs \
-    npm \
     procps \
     python3 \
     ripgrep \
     rsync \
+    sudo \
     tini \
+  && echo 'node ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/node \
+  && chmod 0440 /etc/sudoers.d/node \
+  && install -d -o node -g node /workspace /runtime /runtime/opencode-config /runtime/workspaces /runtime/npm-global \
   && npm install -g bun@1.3.11 \
   && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /workspace
+
+COPY . /sources/OpenSessionGateway
 
 COPY docker/osg-opencode-suite/scripts/ /opt/osg-opencode-suite/scripts/
 

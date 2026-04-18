@@ -10,6 +10,10 @@ VENDOR_OPENCODE_ROOT="${DST_ROOT}/.vendor-opencode"
 SYNC_MARKER="${DST_ROOT}/.lab-synced"
 LAB_BOOTSTRAP_ROLE="${LAB_BOOTSTRAP_ROLE:-dev}"
 
+needs_opencode_source() {
+  [[ "${LAB_BOOTSTRAP_ROLE}" != "osg" ]]
+}
+
 need_sync() {
   [[ "${LAB_SYNC_ALWAYS:-0}" == "1" ]] || [[ ! -f "${SYNC_MARKER}" ]]
 }
@@ -37,22 +41,28 @@ const path = require("node:path")
 
 const root = "/workspace/OpenSessionGateway"
 const role = process.env.LAB_BOOTSTRAP_ROLE || "dev"
-const pluginPkgPath = path.join(root, "packages", "client-opencode-plugin-v2", "package.json")
 const clientLibraryPkgPath = path.join(root, "packages", "client-library", "package.json")
 const serverPkgPath = path.join(root, "server", "package.json")
 const rootPkgPath = path.join(root, "package.json")
 
-const pluginPkg = JSON.parse(fs.readFileSync(pluginPkgPath, "utf8"))
-pluginPkg.dependencies ||= {}
-pluginPkg.dependencies["@opencode-ai/plugin"] = "file:../../../.vendor-opencode/plugin"
-pluginPkg.dependencies["@opencode-ai/sdk"] = "file:../../../.vendor-opencode/sdk"
-pluginPkg.dependencies["@opensessiongateway/client-library"] = "file:../client-library"
-pluginPkg.dependencies["@opensessiongateway/protocol-library"] = "file:../protocol-library"
-fs.writeFileSync(pluginPkgPath, JSON.stringify(pluginPkg, null, 2) + "\n")
+if (role !== "osg") {
+  const pluginPkgPath = path.join(root, "packages", "client-opencode-plugin-v2", "package.json")
+  const pluginPkg = JSON.parse(fs.readFileSync(pluginPkgPath, "utf8"))
+  pluginPkg.dependencies ||= {}
+  pluginPkg.dependencies["@opencode-ai/plugin"] = "file:../../../.vendor-opencode/plugin"
+  pluginPkg.dependencies["@opencode-ai/sdk"] = "file:../../../.vendor-opencode/sdk"
+  if (role === "dev") {
+    pluginPkg.dependencies["@opensessiongateway/client-library"] = "file:../client-library"
+    pluginPkg.dependencies["@opensessiongateway/protocol-library"] = "file:../protocol-library"
+  }
+  fs.writeFileSync(pluginPkgPath, JSON.stringify(pluginPkg, null, 2) + "\n")
+}
 
 const clientLibraryPkg = JSON.parse(fs.readFileSync(clientLibraryPkgPath, "utf8"))
 clientLibraryPkg.dependencies ||= {}
-clientLibraryPkg.dependencies["@opensessiongateway/protocol-library"] = "file:../protocol-library"
+if (role === "osg" || role === "dev") {
+  clientLibraryPkg.dependencies["@opensessiongateway/protocol-library"] = "file:../protocol-library"
+}
 fs.writeFileSync(clientLibraryPkgPath, JSON.stringify(clientLibraryPkg, null, 2) + "\n")
 
 const rootPkg = JSON.parse(fs.readFileSync(rootPkgPath, "utf8"))
@@ -75,6 +85,10 @@ EOF
 }
 
 prepare_vendor_opencode_packages() {
+  if ! needs_opencode_source; then
+    return
+  fi
+
   rm -rf "${VENDOR_OPENCODE_ROOT}"
   mkdir -p "${VENDOR_OPENCODE_ROOT}/plugin" "${VENDOR_OPENCODE_ROOT}/sdk"
   rsync -a --delete --exclude "node_modules" --exclude "dist" "${DST_OPENCODE}/packages/plugin/" "${VENDOR_OPENCODE_ROOT}/plugin/"
@@ -155,15 +169,18 @@ build_osg_local_packages() {
   fi
 
   if [[ "${LAB_BOOTSTRAP_ROLE}" == "opencode" || "${LAB_BOOTSTRAP_ROLE}" == "dev" ]]; then
-    npm --prefix "${DST_OSG}/packages/protocol-library" run build
-    npm --prefix "${DST_OSG}/packages/client-library" run build
-    npm --prefix "${DST_OSG}/packages/client-opencode-plugin-v2" run build
+    return
   fi
 }
 
 main() {
-  if [[ ! -d "${SRC_OSG}" || ! -d "${SRC_OPENCODE}" ]]; then
-    echo "missing mounted sources under /sources" >&2
+  if [[ ! -d "${SRC_OSG}" ]]; then
+    echo "missing OpenSessionGateway source under /sources" >&2
+    exit 1
+  fi
+
+  if needs_opencode_source && [[ ! -d "${SRC_OPENCODE}" ]]; then
+    echo "missing opencode source under /sources" >&2
     exit 1
   fi
 
@@ -171,7 +188,9 @@ main() {
 
   if need_sync; then
     sync_repo "${SRC_OSG}" "${DST_OSG}"
-    sync_repo "${SRC_OPENCODE}" "${DST_OPENCODE}"
+    if needs_opencode_source; then
+      sync_repo "${SRC_OPENCODE}" "${DST_OPENCODE}"
+    fi
     touch "${SYNC_MARKER}"
   fi
 

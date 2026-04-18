@@ -3,6 +3,7 @@ import type { IncomingMessage } from "node:http";
 import type { ParsedUrlQuery } from "node:querystring";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import next from "next";
 import { WebSocketServer } from "ws";
 
@@ -15,8 +16,9 @@ const DEFAULT_PORT = 4088;
 const DEFAULT_ADMIN_PORT = 4091;
 const DEFAULT_HOST = "0.0.0.0";
 const DEFAULT_LISTEN_BACKLOG = 511;
+const currentDir = path.dirname(fileURLToPath(import.meta.url));
 const SERVER_RUNTIME_DIR = path.resolve(
-  process.env.OSG_SERVER_RUNTIME_DIR?.trim() || path.join(__dirname, "..", "agents", "server", ".runtime"),
+  process.env.OSG_SERVER_RUNTIME_DIR?.trim() || path.join(currentDir, "..", "agents", "server", ".runtime"),
 );
 const LOCK_DIR = path.join(SERVER_RUNTIME_DIR, "locks");
 

@@ -5,8 +5,11 @@
   "scripts": {
     "dev": "node run.mjs dev",
     "build": "node run.mjs build",
+    "build:package": "node run.mjs buildpackage",
+    "pack:package": "node run.mjs packpackage",
     "pluginbuild": "node run.mjs pluginbuild",
     "lint": "node run.mjs lint",
+    "publish:local": "node run.mjs publishlocal",
     "start": "node run.mjs start"
   }
 }

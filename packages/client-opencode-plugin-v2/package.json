@@ -1,6 +1,6 @@
 {
   "name": "@opensessiongateway/client-opencode-plugin-v2",
-  "version": "0.0.1",
+  "version": "0.0.5",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -11,10 +11,10 @@
   },
   "license": "MIT",
   "dependencies": {
-    "@opencode-ai/plugin": "1.2.27-local",
-    "@opencode-ai/sdk": "1.2.27-local",
-    "@opensessiongateway/client-library": "0.0.1",
-    "@opensessiongateway/protocol-library": "0.0.1",
+    "@opencode-ai/plugin": "latest",
+    "@opencode-ai/sdk": "latest",
+    "@opensessiongateway/client-library": "0.0.4",
+    "@opensessiongateway/protocol-library": "0.0.3",
     "ws": "^8.18.0"
   },
   "devDependencies": {

@@ -1,19 +1,27 @@
 {
   "name": "@opensessiongateway/osg-plugin-runtime-control",
-  "version": "0.1.0",
-  "private": true,
+  "version": "0.1.1",
   "type": "module",
+  "main": "./dist/index.js",
+  "exports": {
+    ".": {
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json --pretty false",
     "typecheck": "tsc -p tsconfig.json --noEmit --pretty false"
   },
   "dependencies": {
-    "@opensessiongateway/server-plugin-sdk": "0.0.2"
+    "@opensessiongateway/server-plugin-sdk": "0.0.3"
   },
   "devDependencies": {
     "typescript": "^5.8.2"
   },
   "osgServerPlugin": {
-    "entry": "./index.ts"
+    "entry": "./dist/index.js"
   }
 }

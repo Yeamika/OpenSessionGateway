@@ -7,7 +7,10 @@ const mode = process.argv[2] || "build";
 const commands = {
   dev: ["run", "dev"],
   build: ["run", "build"],
+  buildpackage: ["run", "build:package"],
   lint: ["run", "lint"],
+  packpackage: ["run", "pack:package"],
+  publishlocal: ["run", "publish:local"],
   start: ["run", "start:ws"],
 };
 

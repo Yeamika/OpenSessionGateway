@@ -7,11 +7,11 @@ import { errorResult } from "@/lib/v2/mcp/common";
 export const runtime = "nodejs";
 
 type RouteContext = {
-  params: Promise<{ surface?: string }> | { surface?: string };
+  params: Promise<{ surface?: string }>;
 };
 
 async function readSurface(context: RouteContext): Promise<string> {
-  const params = await Promise.resolve(context.params);
+  const params = await context.params;
   return typeof params.surface === "string" ? params.surface.trim() : "";
 }
 

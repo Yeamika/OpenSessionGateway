@@ -16,8 +16,8 @@
     "control:cli": "npm run build && node dist/cli.js control"
   },
   "dependencies": {
-    "@opensessiongateway/client-library": "0.0.1",
-    "@opensessiongateway/protocol-library": "0.0.1",
+    "@opensessiongateway/client-library": "0.0.4",
+    "@opensessiongateway/protocol-library": "0.0.3",
     "ws": "^8.18.0"
   },
   "devDependencies": {

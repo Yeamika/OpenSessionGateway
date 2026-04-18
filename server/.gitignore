@@ -19,6 +19,7 @@
 
 # production
 /build
+/.dist-npm
 
 # misc
 .DS_Store

@@ -16,7 +16,7 @@ export OPENCODE_PORT="${OPENCODE_PORT:-9202}"
 mkdir -p "${OPENCODE_CONFIG_DIR}/plugin" "${OPENCODE_WORKDIR}" "${OSG_LOG_DIR}"
 
 cat > "${OPENCODE_CONFIG_DIR}/plugin/osg.js" <<'EOF'
-export { default } from "file:///workspace/OpenSessionGateway/packages/client-opencode-plugin-v2/dist/index.js"
+export { default } from "file:///workspace/OpenSessionGateway/packages/client-opencode-plugin-v2/node_modules/@opensessiongateway/client-opencode-plugin-v2/dist/index.js"
 EOF
 
 cd /workspace/opencode

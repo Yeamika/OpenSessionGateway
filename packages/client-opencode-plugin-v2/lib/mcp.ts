@@ -25,32 +25,22 @@ function deriveMcpBaseUrl(input: { wsServerUrl?: string; baseUrl?: string }): st
   return "";
 }
 
-function deriveAdminPluginsUrl(input: { wsServerUrl?: string; baseUrl?: string }): string {
-  const direct = typeof process.env.OSG_ADMIN_URL === "string" ? process.env.OSG_ADMIN_URL.trim() : "";
+function deriveSurfaceDiscoveryUrl(input: { wsServerUrl?: string; baseUrl?: string }): string {
+  const direct = typeof process.env.OSG_MCP_SURFACES_URL === "string" ? process.env.OSG_MCP_SURFACES_URL.trim() : "";
   if (direct) {
-    return trimRightSlash(direct).replace(/\/api\/plugins$/i, "") + "/api/plugins";
+    return trimRightSlash(direct).replace(/\/api\/v2\/mcpsurfaces$/i, "") + "/api/v2/mcpsurfaces";
   }
 
   const base = typeof input.baseUrl === "string" && input.baseUrl.trim()
     ? input.baseUrl.trim()
     : typeof input.wsServerUrl === "string"
-      ? input.wsServerUrl.trim().replace(/^wss?:\/\//i, (match) => (match.toLowerCase() === "wss://" ? "https://" : "http://")).replace(/\/api\/v2\/wsport$/i, "")
+      ? input.wsServerUrl.trim().replace(/^wss?:\/\//i, (match) => (match.toLowerCase() === "wss://" ? "https://" : "http://")).replace(/\/wsport$/i, "")
       : "";
   if (!base) return "";
 
   try {
     const url = new URL(base);
-    const envPort = Number(process.env.OSG_ADMIN_PORT || "");
-    if (Number.isInteger(envPort) && envPort > 0 && envPort <= 65535) {
-      url.port = String(envPort);
-    } else if (url.port) {
-      url.port = String(Number(url.port) + 3);
-    } else if (url.protocol === "https:") {
-      url.port = "4091";
-    } else {
-      url.port = "4091";
-    }
-    url.pathname = "/api/plugins";
+    url.pathname = `${trimRightSlash(url.pathname)}/mcpsurfaces`;
     url.search = "";
     url.hash = "";
     return url.toString();
@@ -60,16 +50,18 @@ function deriveAdminPluginsUrl(input: { wsServerUrl?: string; baseUrl?: string }
 }
 
 async function discoverRouteSegments(input: { wsServerUrl?: string; baseUrl?: string }): Promise<string[]> {
-  const adminUrl = deriveAdminPluginsUrl(input);
-  if (!adminUrl) return [];
+  const url = deriveSurfaceDiscoveryUrl(input);
+  if (!url) return [];
 
   try {
-    const response = await fetch(adminUrl);
+    const response = await fetch(url);
     if (!response.ok) return [];
-    const payload = await response.json() as { plugins?: Array<{ routeSegments?: unknown[] }> };
-    const all = Array.isArray(payload.plugins)
-      ? payload.plugins.flatMap((plugin) => Array.isArray(plugin.routeSegments) ? plugin.routeSegments : [])
-      : [];
+    const payload = await response.json() as { surfaces?: unknown[]; plugins?: Array<{ routeSegments?: unknown[] }> };
+    const all = Array.isArray(payload.surfaces)
+      ? payload.surfaces
+      : Array.isArray(payload.plugins)
+        ? payload.plugins.flatMap((plugin) => Array.isArray(plugin.routeSegments) ? plugin.routeSegments : [])
+        : [];
     return [...new Set(all.filter((item): item is string => typeof item === "string" && item.trim().length > 0).map((item) => item.trim()))]
       .sort((a, b) => a.localeCompare(b));
   } catch {
