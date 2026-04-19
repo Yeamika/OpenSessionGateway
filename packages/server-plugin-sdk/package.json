@@ -1,6 +1,6 @@
 {
   "name": "@opensessiongateway/server-plugin-sdk",
-  "version": "0.0.3",
+  "version": "0.0.5",
   "description": "Shared SDK for OSG server-side plugins",
   "type": "module",
   "main": "dist/index.js",

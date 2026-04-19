@@ -35,8 +35,9 @@ type SessionStatusChangeEvent = {
     runtimeID: string;
     sessionID: string;
     runtimeStatus: "online" | "offline" | "stale" | string;
-    sessionStatus: "idle" | "busy" | "error" | null;
-    currentStatus: string | null;
+    sessionState: "idle" | "busy" | "waiting" | "stopped" | null;
+    sessionReason: "completed" | "pending" | "tool" | "generating" | "reasoning" | "compacting" | "permission" | "question" | "aborted" | "error" | null;
+    sessionMeta: Record<string, unknown> | null;
     title: string | null;
     displayID: string | null;
     instanceWorkspaceDirectory: string | null;
@@ -106,15 +107,13 @@ function readSessionStatusHook(ctx: PluginContext): SessionStatusChangeHook | nu
   return typeof hooks.onSessionStatusChange === "function" ? hooks.onSessionStatusChange : null;
 }
 
-function toStatusLabel(input: { runtimeStatus?: string | null; sessionStatus?: string | null; currentStatus?: string | null }): "idle" | "busy" | "error" | "offline" | null {
+function toStatusLabel(input: { runtimeStatus?: string | null; sessionState?: string | null }): "idle" | "busy" | "error" | "offline" | null {
   const runtimeStatus = (input.runtimeStatus || "").trim().toLowerCase();
   if (runtimeStatus === "offline") return "offline";
-  const sessionStatus = (input.sessionStatus || "").trim().toLowerCase();
-  if (sessionStatus === "idle" || sessionStatus === "busy" || sessionStatus === "error") return sessionStatus;
-  const currentStatus = (input.currentStatus || "").trim().toLowerCase();
-  if (currentStatus === "idle") return "idle";
-  if (currentStatus === "error" || currentStatus === "interrupted") return "error";
-  if (currentStatus) return "busy";
+  const sessionState = (input.sessionState || "").trim().toLowerCase();
+  if (sessionState === "idle") return "idle";
+  if (sessionState === "busy") return "busy";
+  if (sessionState === "waiting" || sessionState === "stopped") return "error";
   return null;
 }
 
@@ -1134,8 +1133,7 @@ export class ImBridgeApp {
   private async handleBindingStatusEvent(binding: GatewaySessionBinding, event: SessionStatusChangeEvent): Promise<void> {
     const label = toStatusLabel({
       runtimeStatus: event.current.runtimeStatus,
-      sessionStatus: event.current.sessionStatus,
-      currentStatus: event.current.currentStatus,
+      sessionState: event.current.sessionState,
     });
     if (!label) return;
     const routes = (await this.stateStore.listRoutes()).filter((route) => route.enabled && route.sessionBindingID === binding.sessionBindingID);

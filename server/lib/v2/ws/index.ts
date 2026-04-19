@@ -1,5 +1,7 @@
 import WebSocket from "ws";
 import { upsertPermissionUpdated } from "@/lib/permission/registry";
+import { markPermissionResolutionRequested } from "@/lib/permission/registry";
+import { getRuntimeQuestion, upsertQuestionUpdated } from "@/lib/question/registry";
 import {
   emitRuntimeConnectEvent,
   emitRuntimeDisconnectEvent,
@@ -18,11 +20,13 @@ import {
 import { handleWsEvent } from "./ws-event";
 import { createAbortSessionRequest } from "@opensessiongateway/protocol-library/ws-protocol/AbortSessionOfClient.js";
 import { createAddPromotRequest, readAddPromotResponse } from "@opensessiongateway/protocol-library/ws-protocol/AddPromot.js";
+import { COMPACT_SESSION_EVENT, createCompactSessionRequest, readCompactSessionResponse } from "@opensessiongateway/protocol-library/ws-protocol/CompactSession.js";
 import { createNewSessionRequest, readCreateNewSessionResponse } from "@opensessiongateway/protocol-library/ws-protocol/CreateNewSession.js";
 import { createGetSessionMsgRequest, readGetSessionMsgResponse } from "@opensessiongateway/protocol-library/ws-protocol/GetSessionMsg.js";
 import { createListAvailableModelsRequest, readListAvailableModelsResponse } from "@opensessiongateway/protocol-library/ws-protocol/ListAvailableModels.js";
 import { readLastUsedModelResponse } from "@opensessiongateway/protocol-library/ws-protocol/ListLastUsedModelOfSession.js";
 import { createResolvePermissionRequestPayload } from "@opensessiongateway/protocol-library/ws-protocol/Permission.js";
+import { createReplyQuestionRequestPayload } from "@opensessiongateway/protocol-library/ws-protocol/Question.js";
 import { createRequestRuntimePayload, readRequestRuntimeResponsePayload, type RequestRuntimeResponsePayload } from "@opensessiongateway/protocol-library/ws-protocol/RequestRuntime.js";
 import { createRenameSessionRequest } from "@opensessiongateway/protocol-library/ws-protocol/RenameSessionOfClient.js";
 import { createSetClientDisplaySessionRequest } from "@opensessiongateway/protocol-library/ws-protocol/SetClientDisplaySession.js";
@@ -36,7 +40,9 @@ import {
   createWsEventResponse,
   readClientContentExecuteingPayload,
   REQUEST_RUNTIME_EVENT,
+  REPLY_QUESTION_REQUEST_EVENT,
   RESOLVE_PERMISSION_REQUEST_EVENT,
+  legacySessionStatusFromState,
   readWsEnvelope,
   WS_EVENT_RESPONSE_TYPE,
 } from "@opensessiongateway/protocol-library";
@@ -153,14 +159,6 @@ function rememberEvent(queue: V2Queue, event: QueueEvent): void {
   if (queue.events.length > 500) {
     queue.events.shift();
   }
-}
-
-function currentStatusFromContent(raw: unknown): string | null {
-  const content = readClientContentExecuteingPayload(raw);
-  if (content.session?.status === "busy") return "Busy";
-  if (content.session?.status === "error") return "Interrupted";
-  if (content.session?.status === "idle") return "Idle";
-  return null;
 }
 
 function cleanupQueue(runtimeID: string, ws?: WebSocket): void {
@@ -364,6 +362,15 @@ export async function requestAbortSessionOfClient(
   };
 }
 
+export async function requestCompactSession(
+  runtimeID: string,
+  payload: { sessionID: string; model?: string; auto?: boolean },
+): Promise<{ ok: boolean; sessionID: string; model?: string; auto?: boolean; error?: string }> {
+  const req = createCompactSessionRequest(payload);
+  const response = await emitToQueue(runtimeID, COMPACT_SESSION_EVENT, req, 90000) as { data?: unknown };
+  return readCompactSessionResponse(response?.data);
+}
+
 export async function requestListAvailableModels(
   runtimeID: string,
   list = 10,
@@ -412,9 +419,13 @@ export async function requestAddPromot(
 
 export async function requestResolvePermission(
   runtimeID: string,
-  payload: { permissionID: string; action: "approve" | "deny" | "cancel"; reason?: string; actor?: string; correlationID?: string },
+  payload: { permissionID: string; sessionID?: string; action: "approve" | "deny" | "cancel"; reason?: string; actor?: string; correlationID?: string },
 ): Promise<{ ok: boolean; permissionID: string; action: "approve" | "deny" | "cancel"; error?: string }> {
-  const req = createResolvePermissionRequestPayload(payload);
+  const current = markPermissionResolutionRequested(runtimeID, payload.permissionID);
+  const req = createResolvePermissionRequestPayload({
+    ...payload,
+    sessionID: payload.sessionID || current?.sessionID || null,
+  });
   const response = await emitToQueue(runtimeID, RESOLVE_PERMISSION_REQUEST_EVENT, req, 12000) as { data?: unknown };
   const data = response?.data && typeof response.data === "object" ? (response.data as Record<string, unknown>) : {};
   const result = {
@@ -425,7 +436,7 @@ export async function requestResolvePermission(
   };
   upsertPermissionUpdated(runtimeID, {
     permissionID: result.permissionID,
-    sessionID: null,
+    sessionID: req.sessionID,
     status: result.ok
       ? result.action === "approve"
         ? "approved"
@@ -438,6 +449,41 @@ export async function requestResolvePermission(
     reason: req.reason,
     message: result.error || null,
     supersededByPermissionID: null,
+    correlationID: req.correlationID,
+  });
+  return result;
+}
+
+export async function requestReplyQuestion(
+  runtimeID: string,
+  payload: { questionID: string; replyType: "answer" | "reject"; answers?: string[][] | null; reason?: string; actor?: string; correlationID?: string },
+): Promise<{ ok: boolean; questionID: string; replyType: "answer" | "reject"; error?: string }> {
+  const current = getRuntimeQuestion(runtimeID, payload.questionID);
+  const req = createReplyQuestionRequestPayload({
+    ...payload,
+    sessionID: current?.sessionID || null,
+  });
+  const response = await emitToQueue(runtimeID, REPLY_QUESTION_REQUEST_EVENT, req, 12000) as { data?: unknown };
+  const data = response?.data && typeof response.data === "object" ? (response.data as Record<string, unknown>) : {};
+  const result = {
+    ok: data.ok === true,
+    questionID: typeof data.questionID === "string" ? data.questionID : req.questionID,
+    replyType: data.replyType === "reject" ? "reject" : req.replyType,
+    error: typeof data.error === "string" ? data.error : undefined,
+  } as const;
+  upsertQuestionUpdated(runtimeID, {
+    questionID: result.questionID,
+    sessionID: current?.sessionID || null,
+    status: result.ok
+      ? result.replyType === "reject"
+        ? "rejected"
+        : "answered"
+      : "failed",
+    updatedAt: new Date().toISOString(),
+    answers: req.answers,
+    actor: req.actor,
+    reason: req.reason,
+    message: result.error || null,
     correlationID: req.correlationID,
   });
   return result;
@@ -506,7 +552,10 @@ export function listV2RuntimeClientsView(): RuntimeClientView[] {
         displayID: content.displayID || null,
         instanceWorkspaceDirectory: content.instanceWorkspaceDirectory || null,
         title: content.session?.title || null,
-        sessionStatus: content.session?.status || null,
+        sessionStatus: content.session?.status || legacySessionStatusFromState(content.session?.state) || null,
+        sessionState: content.session?.state || null,
+        sessionReason: content.session?.reason || null,
+        sessionMeta: content.session?.meta || null,
       })
       continue
     }
@@ -520,6 +569,9 @@ export function listV2RuntimeClientsView(): RuntimeClientView[] {
         instanceWorkspaceDirectory,
         title: item.title,
         sessionStatus: item.status,
+        sessionState: item.state,
+        sessionReason: item.reason,
+        sessionMeta: item.meta,
         lastActiveTime: item.lastActiveTime,
         activeCount: item.activeCount,
         updatedAt: item.lastActiveTime || queue.lastActiveAt,
@@ -551,6 +603,9 @@ export function listV2RuntimeClientsView(): RuntimeClientView[] {
         instanceWorkspaceDirectory: null,
         title: null,
         sessionStatus: null,
+        sessionState: null,
+        sessionReason: null,
+        sessionMeta: null,
       })
       continue
     }
@@ -563,6 +618,9 @@ export function listV2RuntimeClientsView(): RuntimeClientView[] {
         instanceWorkspaceDirectory: null,
         title: item.title,
         sessionStatus: item.status,
+        sessionState: item.state,
+        sessionReason: item.reason,
+        sessionMeta: item.meta,
         lastActiveTime: item.lastActiveTime,
         activeCount: item.activeCount,
         updatedAt: item.lastActiveTime || updatedAt,
@@ -571,14 +629,6 @@ export function listV2RuntimeClientsView(): RuntimeClientView[] {
   }
 
   return rows.sort(compareRuntimeClients);
-}
-
-export function readV2RuntimeCurrentStatus(runtimeID: string): string | null {
-  const clean = runtimeID.trim();
-  if (!clean) return null;
-  const queue = v2Queues.get(clean);
-  if (!queue) return null;
-  return currentStatusFromContent(queue.lastClientContentExecuteing);
 }
 
 type UpgradeInput = {

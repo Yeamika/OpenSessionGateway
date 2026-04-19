@@ -5,6 +5,8 @@ import { fileURLToPath, pathToFileURL } from "node:url"
 const currentFile = fileURLToPath(import.meta.url)
 const currentDir = path.dirname(currentFile)
 const serverRoot = path.resolve(currentDir, "..")
+const workspaceRoot = path.resolve(serverRoot, "..")
+const pluginsRoot = path.join(workspaceRoot, "plugins")
 const outRoot = path.join(serverRoot, ".dist-npm")
 export const packageRoot = path.join(outRoot, "package")
 
@@ -304,12 +306,69 @@ async function copyIntoPackage(relativePath) {
   }
 }
 
-function packageJson(src) {
+async function pluginDirectories() {
+  try {
+    const rows = await fs.readdir(pluginsRoot, { withFileTypes: true })
+    const out = []
+    for (const row of rows) {
+      if (!row.isDirectory()) continue
+      const dir = path.join(pluginsRoot, row.name)
+      try {
+        await fs.stat(path.join(dir, "package.json"))
+        out.push(row.name)
+      } catch {}
+    }
+    return out.sort((a, b) => a.localeCompare(b))
+  } catch {
+    return []
+  }
+}
+
+async function pluginPackages() {
+  const names = await pluginDirectories()
+  const out = []
+  for (const name of names) {
+    try {
+      const pkg = await readJson(path.join(pluginsRoot, name, "package.json"))
+      out.push(pkg)
+    } catch {}
+  }
+  return out
+}
+
+async function bundledPluginDependencies() {
+  const out = {}
+  for (const pkg of await pluginPackages()) {
+    Object.assign(out, pkg.dependencies || {})
+  }
+  return out
+}
+
+async function copyBundledPlugins() {
+  const names = await pluginDirectories()
+  if (!names.length) return
+  const dstRoot = path.join(packageRoot, "local-plugins")
+  await fs.mkdir(dstRoot, { recursive: true })
+  for (const name of names) {
+    await fs.cp(path.join(pluginsRoot, name), path.join(dstRoot, name), {
+      force: true,
+      recursive: true,
+      filter: (src) => {
+        const base = path.basename(src)
+        return base !== "node_modules" && base !== ".tsbuildinfo"
+      },
+    })
+  }
+}
+
+async function packageJson(src) {
   const dependencies = { ...src.dependencies }
   for (const name of buildTools) {
     const value = src.devDependencies?.[name]
     if (value) dependencies[name] = value
   }
+
+  Object.assign(dependencies, await bundledPluginDependencies())
 
   return {
     name: "@opensessiongateway/server",
@@ -371,10 +430,12 @@ export async function buildPackage() {
     await copyIntoPackage(relativePath)
   }
 
+  await copyBundledPlugins()
+
   const srcPkg = await readJson(path.join(serverRoot, "package.json"))
   const srcTsconfig = await readJson(path.join(serverRoot, "tsconfig.json"))
 
-  await writeJson(path.join(packageRoot, "package.json"), packageJson(srcPkg))
+  await writeJson(path.join(packageRoot, "package.json"), await packageJson(srcPkg))
   await writeJson(path.join(packageRoot, "tsconfig.json"), tsconfigJson(srcTsconfig))
   await fs.writeFile(path.join(packageRoot, "next.config.ts"), `${nextConfigSource()}\n`, "utf8")
 

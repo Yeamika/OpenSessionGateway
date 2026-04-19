@@ -49,6 +49,10 @@ function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
 }
 
+function hasOwn(value: unknown, key: string): boolean {
+  return Boolean(value) && typeof value === "object" && Object.prototype.hasOwnProperty.call(value, key);
+}
+
 function emit(level: "info" | "error", message: string, extra: Record<string, unknown> = {}) {
   if (JSON_OUTPUT) {
     process.stdout.write(`${JSON.stringify({ time: new Date().toISOString(), level, message, extra })}\n`);
@@ -508,6 +512,22 @@ async function run() {
         assert(current.sessionID === initialSessionID, `SetClientDisplaySession did not switch active session: ${JSON.stringify(current)}`);
       });
 
+      await step("RequestRuntime exposes state reason meta only", async () => {
+        const payload = await rpcToolCall(runtimeControlUrl, "RequestRuntime", {
+          runtimeID,
+          sessionID: createdSessionID,
+        });
+        const session = payload.session && typeof payload.session === "object"
+          ? (payload.session as Record<string, unknown>)
+          : null;
+        assert(session, `RequestRuntime missing session payload: ${JSON.stringify(payload)}`);
+        assert(session.state === "idle", `RequestRuntime expected state=idle: ${JSON.stringify(payload)}`);
+        assert(typeof session.reason === "string", `RequestRuntime missing reason: ${JSON.stringify(payload)}`);
+        assert(hasOwn(session, "meta"), `RequestRuntime missing meta: ${JSON.stringify(payload)}`);
+        assert(!hasOwn(session, "status"), `RequestRuntime still exposes legacy session.status: ${JSON.stringify(payload)}`);
+        assert(!hasOwn(payload, "currentStatus"), `RequestRuntime still exposes legacy currentStatus: ${JSON.stringify(payload)}`);
+      });
+
       await step("session_bridge initialize", async () => {
         const result = await rpc(sessionBridgeUrl, "initialize", { runtimeID }, { runtimeID });
         const serverInfo = result && typeof result === "object" ? (result as Record<string, unknown>).serverInfo : null;
@@ -518,6 +538,21 @@ async function run() {
       await step("session_bridge tools list", async () => {
         const tools = await rpcToolsList(sessionBridgeUrl, { runtimeID });
         assert(tools.includes("GetSessionMessages"), "session_bridge missing GetSessionMessages");
+        assert(tools.includes("ListLivingSessions"), "session_bridge missing ListLivingSessions");
+      });
+
+      await step("ListClientDisplays exposes state reason meta only", async () => {
+        const payload = await rpcToolCall(runtimeControlUrl, "ListClientDisplays", {
+          runtimeID,
+          list: 50,
+          regex: "display_smoke_switch",
+        });
+        const list = Array.isArray(payload.list) ? payload.list : [];
+        const matched = list.find((item) => item && typeof item === "object" && (item as Record<string, unknown>).displayID === "display_smoke_switch") as Record<string, unknown> | undefined;
+        assert(matched, `ListClientDisplays missing display_smoke_switch: ${JSON.stringify(payload)}`);
+        assert(typeof matched.sessionState === "string", `ListClientDisplays missing sessionState: ${JSON.stringify(payload)}`);
+        assert(hasOwn(matched, "sessionMeta"), `ListClientDisplays missing sessionMeta: ${JSON.stringify(payload)}`);
+        assert(!hasOwn(matched, "sessionStatus"), `ListClientDisplays still exposes legacy sessionStatus: ${JSON.stringify(payload)}`);
       });
 
       await step("AddPrompt tool", async () => {
@@ -569,8 +604,32 @@ async function run() {
           regex: createdSessionID,
         });
         const list = Array.isArray(payload.list) ? payload.list : [];
-        const matched = list.some((item) => item && typeof item === "object" && (item as Record<string, unknown>).id === createdSessionID);
+        const matched = list.find((item) => item && typeof item === "object" && (item as Record<string, unknown>).id === createdSessionID) as Record<string, unknown> | undefined;
         assert(matched, `ListActivedSessions missing ${createdSessionID}: ${JSON.stringify(payload)}`);
+        assert(typeof matched.state === "string", `ListActivedSessions missing state: ${JSON.stringify(payload)}`);
+        assert(typeof matched.reason === "string", `ListActivedSessions missing reason: ${JSON.stringify(payload)}`);
+        assert(hasOwn(matched, "meta"), `ListActivedSessions missing meta: ${JSON.stringify(payload)}`);
+        assert(!hasOwn(matched, "status"), `ListActivedSessions still exposes legacy status: ${JSON.stringify(payload)}`);
+      });
+
+      await step("ListLivingSessions exposes state reason meta only", async () => {
+        const payload = await rpcToolCall(
+          sessionBridgeUrl,
+          "ListLivingSessions",
+          {
+            ExecutorSessionID: createdSessionID,
+            list: 50,
+            regex: createdSessionID,
+          },
+          { runtimeID },
+        );
+        const list = Array.isArray(payload.list) ? payload.list : [];
+        const matched = list.find((item) => item && typeof item === "object" && (item as Record<string, unknown>).sessionID === createdSessionID) as Record<string, unknown> | undefined;
+        assert(matched, `ListLivingSessions missing ${createdSessionID}: ${JSON.stringify(payload)}`);
+        assert(typeof matched.sessionState === "string", `ListLivingSessions missing sessionState: ${JSON.stringify(payload)}`);
+        assert(typeof matched.sessionReason === "string", `ListLivingSessions missing sessionReason: ${JSON.stringify(payload)}`);
+        assert(hasOwn(matched, "sessionMeta"), `ListLivingSessions missing sessionMeta: ${JSON.stringify(payload)}`);
+        assert(!hasOwn(matched, "currentStatus"), `ListLivingSessions still exposes legacy currentStatus: ${JSON.stringify(payload)}`);
       });
     }
 

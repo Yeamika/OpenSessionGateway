@@ -77,11 +77,12 @@ export function pseudoRandom(seed: number, step: number) {
   return x - Math.floor(x);
 }
 
-export function sessionLampColor(status: ClientItem["sessionStatus"], runtime: ClientItem["status"]) {
+export function sessionLampColor(state: ClientItem["sessionState"], runtime: ClientItem["status"]) {
   if (runtime === "offline") return "#7f8a9a";
-  if (status === "error") return "#ff5f56";
-  if (status === "busy") return "#4da6ff";
-  if (status === "idle") return "#41ff99";
+  if (state === "stopped") return "#ff5f56";
+  if (state === "waiting") return "#ffbf47";
+  if (state === "busy") return "#4da6ff";
+  if (state === "idle") return "#41ff99";
   if (runtime === "stale") return "#ffbf47";
   return "#7f8a9a";
 }
@@ -293,19 +294,64 @@ export function cardKey(client: ClientItem) {
   return client.key || `${client.runtimeID}:${client.sessionID || "runtime"}`;
 }
 
-export function sessionStatusLabel(status: ClientItem["sessionStatus"]) {
-  if (status === "busy") return "busy";
-  if (status === "error") return "error";
-  if (status === "idle") return "idle";
-  return "-";
+export function sessionStatusLabel(state: ClientItem["sessionState"], reason?: ClientItem["sessionReason"]) {
+  if (!state) return "-";
+  if (!reason) return state;
+  return `${state}.${reason}`;
 }
 
-export function promptClass(status: ClientItem["sessionStatus"], runtime: ClientItem["status"]) {
+export function sessionBucket(state: ClientItem["sessionState"]): "idle" | "busy" | "error" | null {
+  if (state === "idle") return "idle";
+  if (state === "busy") return "busy";
+  if (state === "waiting" || state === "stopped") return "error";
+  return null;
+}
+
+export function promptClass(state: ClientItem["sessionState"], runtime: ClientItem["status"]) {
   if (runtime === "offline") return "is-offline";
-  if (status === "error") return "is-error";
-  if (status === "busy") return "is-busy";
-  if (status === "idle") return "is-idle";
+  if (state === "stopped" || state === "waiting") return "is-error";
+  if (state === "busy") return "is-busy";
+  if (state === "idle") return "is-idle";
   return "is-offline";
+}
+
+function record(value: unknown) {
+  return value && typeof value === "object" ? value as Record<string, unknown> : {};
+}
+
+function text(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function compact(value: string, max = 160) {
+  const clean = value.replace(/\s+/g, " ").trim();
+  if (clean.length <= max) return clean;
+  return `${clean.slice(0, max - 1)}...`;
+}
+
+export function sessionSubtitle(client: ClientItem) {
+  if (client.sessionReason === "compacting") return "";
+  const meta = record(client.sessionMeta);
+  const direct = text(meta.subtitle);
+  if (direct && client.sessionReason !== "tool") return compact(direct);
+  return "";
+}
+
+export function sessionContext(client: ClientItem) {
+  if (client.sessionReason === "compacting") return "";
+  const meta = record(client.sessionMeta);
+  const direct = text(meta.context);
+  if (direct) return compact(direct);
+  return "";
+}
+
+export function sessionEventLabel(client: ClientItem) {
+  if (client.sessionReason === "tool") return "tool";
+  if (client.sessionReason === "reasoning") return "think";
+  if (client.sessionReason === "compacting") return "compacting";
+  if (client.sessionReason === "permission") return "permission";
+  if (client.sessionReason === "question") return "question";
+  return "";
 }
 
 export function cardClass(client: ClientItem) {

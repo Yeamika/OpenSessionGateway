@@ -40,11 +40,6 @@ export function normalizeStringArg(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
-export function busyLabel(value: string | null): "idle" | "busy" {
-  const text = (value || "").trim().toLowerCase();
-  return text === "busy" ? "busy" : "idle";
-}
-
 export function readLastActiveTime(value: { lastActiveTime?: string | null } | null | undefined): string {
   return typeof value?.lastActiveTime === "string" ? value.lastActiveTime : "";
 }

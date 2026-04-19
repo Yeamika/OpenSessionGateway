@@ -50,6 +50,7 @@ export type PermissionUpdatedPayload = {
 
 export type ResolvePermissionRequestPayload = {
   permissionID: string;
+  sessionID: string | null;
   action: PermissionDecision;
   reason: string | null;
   actor: string | null;
@@ -202,6 +203,7 @@ export function readPermissionUpdatedPayload(raw: unknown): PermissionUpdatedPay
 
 export function createResolvePermissionRequestPayload(input: {
   permissionID?: string;
+  sessionID?: string | null;
   action?: PermissionDecision;
   reason?: string | null;
   actor?: string | null;
@@ -209,6 +211,7 @@ export function createResolvePermissionRequestPayload(input: {
 }): ResolvePermissionRequestPayload {
   return {
     permissionID: normalizeString(input.permissionID),
+    sessionID: nullableString(input.sessionID),
     action: normalizeDecision(input.action) || "cancel",
     reason: nullableString(input.reason),
     actor: nullableString(input.actor),
@@ -220,6 +223,7 @@ export function readResolvePermissionRequestPayload(raw: unknown): ResolvePermis
   const src = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
   return createResolvePermissionRequestPayload({
     permissionID: src.permissionID as string | undefined,
+    sessionID: src.sessionID as string | null | undefined,
     action: src.action as PermissionDecision,
     reason: src.reason as string | null | undefined,
     actor: src.actor as string | null | undefined,

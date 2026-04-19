@@ -29,18 +29,24 @@ export function createListActivedSessionsToolHandler(services: RuntimeControlSer
       .map((item) => ({
         sessionID: item.sessionID || "",
         title: item.title || "",
+        state: item.sessionState || null,
+        reason: item.sessionReason || null,
+        meta: item.sessionMeta || null,
         lastActiveTime: readLastActiveTime(item as { lastActiveTime?: string | null }),
         activeCount: readActiveCount(item as { activeCount?: number }),
       }));
     const managedBySession = new Map(managed.map((item) => [item.sessionID, item]));
     const clientsBySession = new Map(clients.map((item) => [item.sessionID, item]));
-    const merged = new Map<string, {
-      name: string;
-      id: string;
-      time: string;
-      lastActiveTime: string;
-      activeCount: number;
-    }>();
+      const merged = new Map<string, {
+        name: string;
+        id: string;
+        state: "idle" | "busy" | "waiting" | "stopped" | null;
+        reason: "completed" | "pending" | "tool" | "generating" | "reasoning" | "compacting" | "permission" | "question" | "aborted" | "error" | null;
+        meta: Record<string, unknown> | null;
+        time: string;
+        lastActiveTime: string;
+        activeCount: number;
+      }>();
 
     function matches(id: string, name: string): boolean {
       if (!regexFilter) return true;
@@ -54,6 +60,9 @@ export function createListActivedSessionsToolHandler(services: RuntimeControlSer
       merged.set(client.sessionID, {
         name,
         id: client.sessionID,
+        state: client.state,
+        reason: client.reason,
+        meta: client.meta,
         time: client.lastActiveTime,
         lastActiveTime: client.lastActiveTime,
         activeCount: Math.max(client.activeCount, readActiveCount(managedBySession.get(client.sessionID) as { activeCount?: number } | undefined)),
@@ -68,6 +77,9 @@ export function createListActivedSessionsToolHandler(services: RuntimeControlSer
       merged.set(item.sessionID, {
         name,
         id: item.sessionID,
+        state: item.state || null,
+        reason: item.reason || null,
+        meta: item.meta || null,
         time: readLastActiveTime(item as any),
         lastActiveTime: readLastActiveTime(item as any),
         activeCount: Math.max(readActiveCount(item as any), client?.activeCount || 0),

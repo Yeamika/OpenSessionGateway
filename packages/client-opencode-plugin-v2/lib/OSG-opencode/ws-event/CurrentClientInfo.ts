@@ -1,7 +1,19 @@
 import path from "node:path";
 import type { CurrentClientInfo as SharedCurrentClientInfo } from "@opensessiongateway/protocol-library/ws-protocol/CurrentClient.js";
+import {
+  normalizeClientSessionMeta,
+  normalizeClientSessionReason,
+  normalizeClientSessionState,
+  type ClientSessionMeta,
+  type ClientSessionReason,
+  type ClientSessionState,
+} from "@opensessiongateway/protocol-library/ws-protocol/ClientContentExecuteing.js";
 
-export type CurrentClientInfo = Pick<SharedCurrentClientInfo, "sessionID" | "sessionTitle" | "status" | "cwd">;
+export type CurrentClientInfo = Pick<SharedCurrentClientInfo, "sessionID" | "sessionTitle" | "status" | "cwd"> & {
+  sessionState: ClientSessionState | null;
+  sessionReason: ClientSessionReason | null;
+  sessionMeta: ClientSessionMeta | null;
+};
 
 export function normalizeAbsoluteCwd(value: unknown): string {
   if (typeof value !== "string") return "";
@@ -19,11 +31,27 @@ export function createInitialCurrentClientInfo(directory: unknown): CurrentClien
     sessionTitle: "",
     status: "Idle",
     cwd: initialCwd || "unknown",
+    sessionState: null,
+    sessionReason: null,
+    sessionMeta: null,
   };
 }
 
 export function getCurrentClientInfoSnapshot(state: CurrentClientInfo): CurrentClientInfo {
   return { ...state };
+}
+
+export function readCurrentSessionStateInfo(value: unknown): {
+  state: ClientSessionState | null;
+  reason: ClientSessionReason | null;
+  meta: ClientSessionMeta | null;
+} {
+  const src = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+  return {
+    state: normalizeClientSessionState(src.sessionState) || null,
+    reason: normalizeClientSessionReason(src.sessionReason) || null,
+    meta: normalizeClientSessionMeta(src.sessionMeta) || null,
+  };
 }
 
 export function statusFromSdk(statusType: unknown): string {
@@ -39,6 +67,9 @@ export function ensureSessionInfo(state: CurrentClientInfo, sessionID: unknown):
   state.sessionID = id;
   if (changed) {
     state.sessionTitle = "";
+    state.sessionState = null;
+    state.sessionReason = null;
+    state.sessionMeta = null;
   }
   return changed;
 }

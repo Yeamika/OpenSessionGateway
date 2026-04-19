@@ -1,4 +1,4 @@
-import { busyLabel, normalizeList, normalizeRegex, readActiveCount, readLastActiveTime } from "../common.js";
+import { normalizeList, normalizeRegex, readActiveCount, readLastActiveTime } from "../common.js";
 import type { SessionBridgeServices } from "../types.js";
 
 export const LIST_LIVING_SESSIONS_TOOL = {
@@ -52,7 +52,9 @@ export function createListLivingSessionsToolHandler(services: SessionBridgeServi
         runtimeID: item.runtimeID,
         title: item.title || "",
         sessionID: item.sessionID || "",
-        currentStatus: busyLabel(item.sessionStatus),
+        sessionState: item.sessionState || null,
+        sessionReason: item.sessionReason || null,
+        sessionMeta: item.sessionMeta || null,
         lastActiveTime: readLastActiveTime(item as { lastActiveTime?: string | null }),
         activeCount: readActiveCount(item as { activeCount?: number }),
       }));

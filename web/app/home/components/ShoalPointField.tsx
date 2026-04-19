@@ -10,8 +10,11 @@ import {
   displayTitle,
   runtimeKey,
   runtimeTarget,
+  sessionContext,
+  sessionEventLabel,
   sessionLampColor,
   sessionStatusLabel,
+  sessionSubtitle,
   shortRuntimeLabel,
   simpleHash,
   statusLabel,
@@ -694,7 +697,7 @@ function buildScenePoints(clients: ClientItem[]): ScenePoint[] {
           clientCount,
           seed,
           size: client.displayID ? (client.synthetic ? 8 : 10) : (client.synthetic ? 5 : 7),
-          color: toRgbUnit(sessionLampColor(client.sessionStatus, client.status)),
+          color: toRgbUnit(sessionLampColor(client.sessionState, client.status)),
           phase: (seed % 360) * (Math.PI / 180),
           speed: 0.38 + (seed % 11) * 0.03,
           spin: seed % 2 === 0 ? 1 : -1,
@@ -1678,7 +1681,7 @@ export function ShoalPointField({
             }}
             onPointerDown={(event) => handleLabelPointerDown(point.key, event)}
             className={`nancy-point-label ${point.client.status === "offline" ? "is-offline" : ""} ${draggingKey === point.key ? "is-dragging" : ""}`}
-            style={{ ["--nancy-point-accent" as string]: sessionLampColor(point.client.sessionStatus, point.client.status) }}
+            style={{ ["--nancy-point-accent" as string]: sessionLampColor(point.client.sessionState, point.client.status) }}
           >
             <span className="nancy-point-label-text">{point.label}</span>
           </div>
@@ -1689,15 +1692,24 @@ export function ShoalPointField({
         <div
           ref={hoverCardRef}
           className="nancy-point-hover"
-          style={{ ["--nancy-point-accent" as string]: sessionLampColor(hoveredPoint.client.sessionStatus, hoveredPoint.client.status) }}
+          style={{ ["--nancy-point-accent" as string]: sessionLampColor(hoveredPoint.client.sessionState, hoveredPoint.client.status) }}
         >
           <div className="nancy-point-hover-head">
             <div className="nancy-point-hover-title">{displayTitle(hoveredPoint.client)}</div>
-            <div className="nancy-point-hover-state">{sessionStatusLabel(hoveredPoint.client.sessionStatus)}</div>
+            <div className="nancy-point-hover-state">{sessionStatusLabel(hoveredPoint.client.sessionState, hoveredPoint.client.sessionReason)}</div>
           </div>
           <div className="nancy-point-hover-sub">
             {shortRuntimeLabel(hoveredPoint.client.runtimeID)} · {workspaceLabel(hoveredPoint.client.workspace)}
           </div>
+          {sessionEventLabel(hoveredPoint.client) ? (
+            <div className="nancy-point-hover-sub">{sessionEventLabel(hoveredPoint.client)}</div>
+          ) : null}
+          {sessionSubtitle(hoveredPoint.client) ? (
+            <div className="nancy-point-hover-sub">{sessionSubtitle(hoveredPoint.client)}</div>
+          ) : null}
+          {!sessionSubtitle(hoveredPoint.client) && sessionContext(hoveredPoint.client) ? (
+            <div className="nancy-point-hover-sub">{sessionContext(hoveredPoint.client)}</div>
+          ) : null}
           <div className="nancy-point-hover-grid">
             <div className="nancy-point-hover-row">
               <span className="nancy-point-hover-key">status</span>

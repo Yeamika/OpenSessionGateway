@@ -6,8 +6,13 @@
     "declaration": true,
     "strict": false,
     "skipLibCheck": true,
+    "types": ["node"],
+    "typeRoots": ["../server/node_modules/@types", "../node_modules/@types"],
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
-    "lib": ["ES2022", "DOM"]
+    "lib": ["ES2022", "DOM"],
+    "paths": {
+      "@opensessiongateway/server-plugin-sdk": ["../packages/server-plugin-sdk/dist/index.d.ts"]
+    }
   }
 }

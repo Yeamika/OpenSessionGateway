@@ -1,6 +1,6 @@
 import { Pin, PinOff } from "lucide-react";
 import type { ClientItem, CardPosition } from "../types";
-import { cardClass, clientSize, displayTitle, sessionLampColor, sessionStatusLabel, statusLabel, shortRuntimeLabel, workspaceLabel } from "../utils";
+import { cardClass, clientSize, displayTitle, sessionContext, sessionEventLabel, sessionLampColor, sessionStatusLabel, sessionSubtitle, statusLabel, shortRuntimeLabel, workspaceLabel } from "../utils";
 import { PromptIndicator } from "./PromptIndicator";
 
 export function SessionCard({
@@ -23,6 +23,9 @@ export function SessionCard({
   onTogglePin: () => void;
 }) {
   const size = clientSize(client);
+  const event = sessionEventLabel(client);
+  const subtitle = sessionSubtitle(client);
+  const context = sessionContext(client);
 
   return (
     <article
@@ -42,13 +45,16 @@ export function SessionCard({
           <span
             className="nancy-lamp"
             style={{
-              backgroundColor: sessionLampColor(client.sessionStatus, client.status),
+              backgroundColor: sessionLampColor(client.sessionState, client.status),
               animationDelay: `${(index % 9) * 0.18}s`,
             }}
           />
           <div className="nancy-lamp-tip">
             <div>status: {statusLabel(client.status)}</div>
-            <div>session status: {sessionStatusLabel(client.sessionStatus)}</div>
+            <div>session status: {sessionStatusLabel(client.sessionState, client.sessionReason)}</div>
+            {event ? <div>activity: {event}</div> : null}
+            {subtitle ? <div>subtitle: {subtitle}</div> : null}
+            {context ? <div>detail: {context}</div> : null}
             <div>runtimeID: {client.runtimeID}</div>
             <div>displayID: {client.displayID ?? "null"}</div>
             <div>title: {displayTitle(client)}</div>
@@ -77,7 +83,10 @@ export function SessionCard({
           {client.synthetic ? <span className="nancy-card-chip">template</span> : null}
           <span className="nancy-card-chip">{shortRuntimeLabel(client.runtimeID)}</span>
           <span className="nancy-card-chip">{workspaceLabel(client.workspace)}</span>
+          {event ? <span className="nancy-card-chip">{event}</span> : null}
         </div>
+        {subtitle ? <div className="nancy-card-subtitle">{subtitle}</div> : null}
+        {!subtitle && context ? <div className="nancy-card-subtitle">{context}</div> : null}
         <PromptIndicator client={client} spin={spin} delay={(index % 11) * 0.11} />
       </div>
     </article>

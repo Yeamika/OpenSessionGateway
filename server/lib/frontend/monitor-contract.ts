@@ -1,5 +1,6 @@
 export type MonitorRuntimeStatus = "online" | "offline";
-export type MonitorSessionStatus = "idle" | "busy" | "error" | null;
+export type MonitorSessionState = "idle" | "busy" | "waiting" | "stopped" | null;
+export type MonitorSessionReason = "completed" | "pending" | "tool" | "generating" | "reasoning" | "compacting" | "permission" | "question" | "aborted" | "error" | null;
 
 export type MonitorClient = {
   key: string;
@@ -10,7 +11,9 @@ export type MonitorClient = {
   instanceWorkspaceDirectory: string | null;
   title: string | null;
   status: MonitorRuntimeStatus;
-  sessionStatus: MonitorSessionStatus;
+  sessionState: MonitorSessionState;
+  sessionReason: MonitorSessionReason;
+  sessionMeta: Record<string, unknown> | null;
   lastActiveTime: string | null;
   activeCount: number;
 };
@@ -38,13 +41,16 @@ type MonitorClientSource = {
   instanceWorkspaceDirectory: string | null;
   title: string | null;
   status: MonitorRuntimeStatus;
-  sessionStatus: MonitorSessionStatus;
+  sessionState: MonitorSessionState;
+  sessionReason: MonitorSessionReason;
+  sessionMeta: Record<string, unknown> | null;
   lastActiveTime: string | null;
   activeCount: number;
 };
 
 const RUNTIME_STATUSES: MonitorRuntimeStatus[] = ["online", "offline"];
-const SESSION_STATUSES: Array<Exclude<MonitorSessionStatus, null>> = ["idle", "busy", "error"];
+const SESSION_STATES: Array<Exclude<MonitorSessionState, null>> = ["idle", "busy", "waiting", "stopped"];
+const SESSION_REASONS: Array<Exclude<MonitorSessionReason, null>> = ["completed", "pending", "tool", "generating", "reasoning", "compacting", "permission", "question", "aborted", "error"];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -58,8 +64,12 @@ function isMonitorRuntimeStatus(value: unknown): value is MonitorRuntimeStatus {
   return typeof value === "string" && RUNTIME_STATUSES.includes(value as MonitorRuntimeStatus);
 }
 
-function isMonitorSessionStatus(value: unknown): value is MonitorSessionStatus {
-  return value === null || (typeof value === "string" && SESSION_STATUSES.includes(value as Exclude<MonitorSessionStatus, null>));
+function isMonitorSessionState(value: unknown): value is MonitorSessionState {
+  return value === null || (typeof value === "string" && SESSION_STATES.includes(value as Exclude<MonitorSessionState, null>));
+}
+
+function isMonitorSessionReason(value: unknown): value is MonitorSessionReason {
+  return value === null || (typeof value === "string" && SESSION_REASONS.includes(value as Exclude<MonitorSessionReason, null>));
 }
 
 export function createMonitorClientKey(source: {
@@ -86,7 +96,9 @@ export function toMonitorClient(source: MonitorClientSource): MonitorClient {
     instanceWorkspaceDirectory: source.instanceWorkspaceDirectory,
     title: source.title,
     status: source.status,
-    sessionStatus: source.sessionStatus,
+    sessionState: source.sessionState,
+    sessionReason: source.sessionReason,
+    sessionMeta: source.sessionMeta,
     lastActiveTime: source.lastActiveTime,
     activeCount: source.activeCount,
   };
@@ -143,7 +155,9 @@ export function readMonitorClient(value: unknown): MonitorClient | null {
   if (!isRecord(value)) return null;
   if (typeof value.runtimeID !== "string" || !value.runtimeID.trim()) return null;
   if (!isMonitorRuntimeStatus(value.status)) return null;
-  if (!isMonitorSessionStatus(value.sessionStatus)) return null;
+  if (!isMonitorSessionState(value.sessionState)) return null;
+  if (!isMonitorSessionReason(value.sessionReason)) return null;
+  if (value.sessionMeta !== null && !isRecord(value.sessionMeta)) return null;
 
   const sessionID = readNullableString(value.sessionID);
   const displayID = readNullableString(value.displayID);
@@ -167,7 +181,9 @@ export function readMonitorClient(value: unknown): MonitorClient | null {
     instanceWorkspaceDirectory,
     title: readNullableString(value.title),
     status: value.status,
-    sessionStatus: value.sessionStatus,
+    sessionState: value.sessionState,
+    sessionReason: value.sessionReason,
+    sessionMeta: value.sessionMeta && isRecord(value.sessionMeta) ? value.sessionMeta : null,
     lastActiveTime: readNullableString(value.lastActiveTime),
     activeCount,
   };

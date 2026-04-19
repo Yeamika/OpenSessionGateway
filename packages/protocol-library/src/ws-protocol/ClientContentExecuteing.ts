@@ -4,7 +4,68 @@ function text(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function record(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
 export const CLIENT_CONTENT_EXECUTEING_EVENT = "ClientContentExecuteing";
+
+export type ClientSessionStatus = "idle" | "busy" | "error";
+export type ClientSessionState = "idle" | "busy" | "waiting" | "stopped";
+export type ClientSessionReason =
+  | "completed"
+  | "pending"
+  | "tool"
+  | "generating"
+  | "reasoning"
+  | "compacting"
+  | "permission"
+  | "question"
+  | "aborted"
+  | "error";
+
+export type ClientSessionMeta = Record<string, unknown>;
+
+export function normalizeClientSessionStatus(value: unknown): ClientSessionStatus | undefined {
+  return value === "idle" || value === "busy" || value === "error" ? value : undefined;
+}
+
+export function normalizeClientSessionState(value: unknown): ClientSessionState | undefined {
+  return value === "idle" || value === "busy" || value === "waiting" || value === "stopped" ? value : undefined;
+}
+
+export function normalizeClientSessionReason(value: unknown): ClientSessionReason | undefined {
+  switch (value) {
+    case "completed":
+    case "pending":
+    case "tool":
+    case "generating":
+    case "reasoning":
+    case "compacting":
+    case "permission":
+    case "question":
+    case "aborted":
+    case "error":
+      return value;
+    default:
+      return undefined;
+  }
+}
+
+export function normalizeClientSessionMeta(value: unknown): ClientSessionMeta | undefined {
+  return record(value) || undefined;
+}
+
+export function legacySessionStatusFromState(
+  state?: ClientSessionState,
+  fallback?: ClientSessionStatus,
+): ClientSessionStatus | undefined {
+  if (state === "idle") return "idle";
+  if (state === "busy") return "busy";
+  if (state === "waiting" || state === "stopped") return "error";
+  return fallback;
+}
 
 export type ClientContentExecuteingPayload = {
   displayID?: string;
@@ -12,7 +73,10 @@ export type ClientContentExecuteingPayload = {
   session?: {
     sessionID?: string;
     title?: string;
-    status?: "idle" | "busy" | "error";
+    status?: ClientSessionStatus;
+    state?: ClientSessionState;
+    reason?: ClientSessionReason;
+    meta?: ClientSessionMeta;
   };
 };
 
@@ -22,19 +86,26 @@ export function createClientContentExecuteingPayload(input: {
   session?: {
     sessionID?: string;
     title?: string;
-    status?: "idle" | "busy" | "error";
+    status?: ClientSessionStatus;
+    state?: ClientSessionState;
+    reason?: ClientSessionReason;
+    meta?: ClientSessionMeta;
   };
 }): ClientContentExecuteingPayload {
   const sessionID = text(input.session?.sessionID);
   const title = text(input.session?.title);
-  const status = input.session?.status === "idle" || input.session?.status === "busy" || input.session?.status === "error"
-    ? input.session.status
-    : undefined;
-  const session = sessionID || title || status
+  const state = normalizeClientSessionState(input.session?.state);
+  const status = legacySessionStatusFromState(state, normalizeClientSessionStatus(input.session?.status));
+  const reason = normalizeClientSessionReason(input.session?.reason);
+  const meta = normalizeClientSessionMeta(input.session?.meta);
+  const session = sessionID || title || status || state || reason || meta
     ? {
         sessionID: sessionID || undefined,
         title: title || undefined,
         status,
+        state,
+        reason,
+        meta,
       }
     : undefined;
 
@@ -54,7 +125,10 @@ export function readClientContentExecuteingPayload(raw: unknown): ClientContentE
     session: {
       sessionID: typeof session.sessionID === "string" ? session.sessionID : undefined,
       title: typeof session.title === "string" ? session.title : undefined,
-      status: session.status === "idle" || session.status === "busy" || session.status === "error" ? session.status : undefined,
+      status: normalizeClientSessionStatus(session.status),
+      state: normalizeClientSessionState(session.state),
+      reason: normalizeClientSessionReason(session.reason),
+      meta: normalizeClientSessionMeta(session.meta),
     },
   });
 }

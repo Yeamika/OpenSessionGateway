@@ -109,6 +109,18 @@ function mapStatusForCurrentInfo(status: SessionStatus): string {
   return "Interrupted";
 }
 
+function mapSessionState(status: SessionStatus): "idle" | "busy" | "stopped" {
+  if (status === "idle") return "idle";
+  if (status === "busy") return "busy";
+  return "stopped";
+}
+
+function mapSessionReason(status: SessionStatus): "completed" | "generating" | "error" {
+  if (status === "idle") return "completed";
+  if (status === "busy") return "generating";
+  return "error";
+}
+
 function mapStatusForSessionMsg(status: SessionStatus): "busy" | "idle" | "interrupted" {
   if (status === "busy") return "busy";
   if (status === "error") return "interrupted";
@@ -193,7 +205,8 @@ export function createTemplateRuntimeState(input: RuntimeStateInput) {
         ? {
             sessionID: session.id,
             title: session.title,
-            status: session.status,
+            state: mapSessionState(session.status),
+            reason: mapSessionReason(session.status),
           }
         : undefined,
     });
@@ -463,7 +476,8 @@ export function createTemplateRuntimeState(input: RuntimeStateInput) {
             session: {
               sessionID: session.id,
               title: session.title,
-              status: session.status,
+              state: mapSessionState(session.status),
+              reason: mapSessionReason(session.status),
             },
           })
         : null;
@@ -479,11 +493,12 @@ export function createTemplateRuntimeState(input: RuntimeStateInput) {
               exists: Boolean(session),
               sessionID: req.sessionID,
               title: session?.title || undefined,
-              status: session?.status || null,
+              state: session ? mapSessionState(session.status) : null,
+              reason: session ? mapSessionReason(session.status) : null,
+              meta: null,
               displayID: session?.displayID || null,
             },
           } : {}),
-          currentStatus: session ? mapStatusForCurrentInfo(session.status) : (activeSession() ? mapStatusForCurrentInfo(activeSession()!.status) : null),
         },
         reportPayload,
       };

@@ -3,17 +3,21 @@ import fs from "node:fs"
 import path from "node:path"
 import { OSGClient } from "@opensessiongateway/client-library"
 import {
-  createClientContentExecuteingPayload,
   createWsEnvelope,
   PERMISSION_ASKED_EVENT,
   PERMISSION_UPDATED_EVENT,
+  QUESTION_ASKED_EVENT,
+  QUESTION_UPDATED_EVENT,
   readPermissionUpdatedPayload,
+  readQuestionUpdatedPayload,
 } from "@opensessiongateway/protocol-library"
+import { createClientContentExecuteingPayload } from "@opensessiongateway/protocol-library/ws-protocol/ClientContentExecuteing.js"
 import type { ClientContentExecuteingPayload } from "@opensessiongateway/protocol-library/ws-protocol/ClientContentExecuteing.js"
 import { buildOsgRuntimeConfig, DEFAULT_OSG_LOG_DIR } from "../config.js"
 import { createClientContentExecuteingWs } from "./ws-event/ClientContentExecuteing.js"
 import { handleServerEvent } from "./ServerEvent.js"
 import { resolveTargetSessionContext } from "./runtime/target-context.js"
+import { readCurrentSessionStateInfo } from "./ws-event/CurrentClientInfo.js"
 
 export type WriteLog = (level: string, message: string, extra?: Record<string, unknown>) => Promise<void>
 
@@ -27,10 +31,18 @@ export type ManagerInstance = {
   RequestInstanceWorkspaceReload: (payload?: { instanceWorkspaceDirectory?: string; title?: string }) => Promise<Record<string, unknown>>
   resolveInstanceWorkspaceInfo: () => { instanceWorkspaceDirectory: string; title: string } | null
   sendPermissionUpdated: (payload: Record<string, unknown>) => boolean
+  sendQuestionUpdated: (payload: Record<string, unknown>) => boolean
   reportClientContentExecuteing: (payload: {
     displayID?: string
     instanceWorkspaceDirectory?: string
-    session?: { sessionID?: string; title?: string; status?: "idle" | "busy" | "error" }
+    session?: {
+      sessionID?: string
+      title?: string
+      status?: "idle" | "busy" | "error"
+      state?: "idle" | "busy" | "waiting" | "stopped" | null
+      reason?: "completed" | "pending" | "tool" | "generating" | "reasoning" | "compacting" | "permission" | "question" | "aborted" | "error" | null
+      meta?: Record<string, unknown> | null
+    }
   }, force?: boolean) => boolean
   getSessionID: () => string
 }
@@ -38,7 +50,8 @@ export type ManagerInstance = {
 type State = {
   client: OSGClient | null
   instances: Map<string, ManagerInstance>
-  permissionRoutes: Map<string, { key: string; instanceWorkspaceDirectory: string; sessionID: string; displayID: string }>
+  permissionRoutes: Map<string, { key: string; sessionID: string }>
+  questionRoutes: Map<string, { key: string; sessionID: string }>
   logFileStream: fs.WriteStream | null
   runtimeID: string
   wsServerUrl: string
@@ -51,6 +64,7 @@ const state: State = {
   client: null,
   instances: new Map(),
   permissionRoutes: new Map(),
+  questionRoutes: new Map(),
   logFileStream: null,
   runtimeID: "",
   wsServerUrl: "",
@@ -114,6 +128,7 @@ type MessageRoute = {
   sessionID: string
   displayID: string
   permissionID: string
+  questionID: string
 }
 
 function instanceBindings(): InstanceBinding[] {
@@ -138,11 +153,12 @@ function readMessageRoute(message?: unknown): MessageRoute {
     sessionID: text(data.sessionID),
     displayID: text(data.displayID),
     permissionID: text(data.permissionID),
+    questionID: text(data.questionID),
   }
 }
 
 function hasExplicitRoute(route: MessageRoute): boolean {
-  return Boolean(route.instanceWorkspaceDirectory || route.sessionID || route.displayID || route.permissionID)
+  return Boolean(route.instanceWorkspaceDirectory || route.sessionID || route.displayID || route.permissionID || route.questionID)
 }
 
 function filterBindings(bindings: InstanceBinding[], route: Pick<MessageRoute, "instanceWorkspaceDirectory" | "displayID">): InstanceBinding[] {
@@ -157,15 +173,23 @@ function chooseBinding(bindings: InstanceBinding[]): InstanceBinding | null {
   return bindings.length === 1 ? bindings[0] : null
 }
 
-function readPermissionRoute(permissionID: string): { instanceWorkspaceDirectory: string; sessionID: string; displayID: string } | null {
+function readPermissionRoute(permissionID: string): { sessionID: string } | null {
   const cleanPermissionID = text(permissionID)
   if (!cleanPermissionID) return null
   const route = state.permissionRoutes.get(cleanPermissionID)
   if (!route) return null
   return {
-    instanceWorkspaceDirectory: route.instanceWorkspaceDirectory,
     sessionID: route.sessionID,
-    displayID: route.displayID,
+  }
+}
+
+function readQuestionRoute(questionID: string): { sessionID: string } | null {
+  const cleanQuestionID = text(questionID)
+  if (!cleanQuestionID) return null
+  const route = state.questionRoutes.get(cleanQuestionID)
+  if (!route) return null
+  return {
+    sessionID: route.sessionID,
   }
 }
 
@@ -195,15 +219,21 @@ async function resolveMessageInstance(message?: unknown): Promise<ManagerInstanc
 
   const route = readMessageRoute(message)
   const permissionRoute = readPermissionRoute(route.permissionID)
+  const questionRoute = readQuestionRoute(route.questionID)
   if (route.permissionID && !permissionRoute && !route.instanceWorkspaceDirectory && !route.sessionID && !route.displayID) {
     return null
   }
-  const effectiveRoute: MessageRoute = permissionRoute
+  if (route.questionID && !questionRoute && !route.instanceWorkspaceDirectory && !route.sessionID && !route.displayID) {
+    return null
+  }
+  const cachedRoute = permissionRoute || questionRoute
+  const effectiveRoute: MessageRoute = cachedRoute
       ? {
-        instanceWorkspaceDirectory: permissionRoute.instanceWorkspaceDirectory,
-        sessionID: permissionRoute.sessionID,
-        displayID: permissionRoute.displayID,
+        instanceWorkspaceDirectory: route.instanceWorkspaceDirectory,
+        sessionID: route.sessionID || cachedRoute.sessionID,
+        displayID: route.displayID,
         permissionID: route.permissionID,
+        questionID: route.questionID,
       }
     : route
 
@@ -231,14 +261,23 @@ async function resolveMessageInstance(message?: unknown): Promise<ManagerInstanc
 
 function rememberPermissionRoute(key: string, payload: Record<string, unknown>) {
   const permissionID = text(payload.permissionID)
+  const sessionID = text(payload.sessionID)
   if (!permissionID) return
-  const binding = instanceBindings().find((item) => item.key === key)
-  if (!binding || !binding.instanceWorkspaceDirectory) return
+  if (!sessionID) return
   state.permissionRoutes.set(permissionID, {
     key,
-    instanceWorkspaceDirectory: binding.instanceWorkspaceDirectory,
-    sessionID: text(payload.sessionID),
-    displayID: text(payload.displayID),
+    sessionID,
+  })
+}
+
+function rememberQuestionRoute(key: string, payload: Record<string, unknown>) {
+  const questionID = text(payload.questionID)
+  const sessionID = text(payload.sessionID)
+  if (!questionID) return
+  if (!sessionID) return
+  state.questionRoutes.set(questionID, {
+    key,
+    sessionID,
   })
 }
 
@@ -247,6 +286,13 @@ function forgetPermissionRoute(payload: Record<string, unknown>) {
   if (!update.permissionID) return
   if (update.status === "created" || update.status === "pending") return
   state.permissionRoutes.delete(update.permissionID)
+}
+
+function forgetQuestionRoute(payload: Record<string, unknown>) {
+  const update = readQuestionUpdatedPayload(payload)
+  if (!update.questionID) return
+  if (update.status === "created" || update.status === "pending") return
+  state.questionRoutes.delete(update.questionID)
 }
 
 function normalizeSessionStatus(value: unknown): "idle" | "busy" | "error" | undefined {
@@ -261,6 +307,7 @@ async function reportAllInstanceStates() {
   for (const item of state.instances.values()) {
     const info = await item.GetCurrentClientInfo().catch(() => null)
     const src = readRecord(info)
+    const session = readCurrentSessionStateInfo(src)
     const payload = createClientContentExecuteingPayload({
       displayID: text(src.displayID) || undefined,
       instanceWorkspaceDirectory: text(src.cwd) || undefined,
@@ -268,6 +315,9 @@ async function reportAllInstanceStates() {
         sessionID: text(src.sessionID) || undefined,
         title: text(src.sessionTitle) || undefined,
         status: normalizeSessionStatus(src.status),
+        state: session.state,
+        reason: session.reason,
+        meta: session.meta,
       },
     })
     if (payload.instanceWorkspaceDirectory || payload.displayID || payload.session) {
@@ -296,10 +346,16 @@ export const OsgManager = {
         state.permissionRoutes.delete(permissionID)
       }
     }
+    for (const [questionID, route] of [...state.questionRoutes.entries()]) {
+      if (route.key === key) {
+        state.questionRoutes.delete(questionID)
+      }
+    }
     if (state.instances.size === 0) {
       state.client?.stop()
       state.client = null
       state.permissionRoutes.clear()
+      state.questionRoutes.clear()
       if (state.logFileStream) {
         try { state.logFileStream.end() } catch {}
         state.logFileStream = null
@@ -354,7 +410,9 @@ export const OsgManager = {
                 RequestInstanceWorkspaceReload: (payload?: { instanceWorkspaceDirectory?: string; title?: string }) => item.RequestInstanceWorkspaceReload(payload),
                 resolveInstanceWorkspaceInfo: () => item.resolveInstanceWorkspaceInfo(),
                 resolvePermissionRoute: (permissionID: string) => readPermissionRoute(permissionID),
+                resolveQuestionRoute: (questionID: string) => readQuestionRoute(questionID),
                 sendPermissionUpdated: (payload: Record<string, unknown>) => item.sendPermissionUpdated(payload),
+                sendQuestionUpdated: (payload: Record<string, unknown>) => item.sendQuestionUpdated(payload),
                 reportClientContentExecuteing: (payload, force) => item.reportClientContentExecuteing(payload, force),
               })
             },
@@ -389,12 +447,19 @@ export const OsgManager = {
     rememberPermissionRoute(key, payload)
     return OsgManager.sendEvent(PERMISSION_ASKED_EVENT, payload)
   },
+  sendQuestionAsked(key: string, payload: Record<string, unknown>) {
+    rememberQuestionRoute(key, payload)
+    return OsgManager.sendEvent(QUESTION_ASKED_EVENT, payload)
+  },
   sendEvent(type: string, data: unknown) {
     if (!state.client) return false
     const eventType = typeof type === "string" ? type.trim() : ""
     if (!eventType) return false
     if (eventType === PERMISSION_UPDATED_EVENT) {
       forgetPermissionRoute(readRecord(data))
+    }
+    if (eventType === QUESTION_UPDATED_EVENT) {
+      forgetQuestionRoute(readRecord(data))
     }
     return state.client.send(createWsEnvelope({
       type: eventType,

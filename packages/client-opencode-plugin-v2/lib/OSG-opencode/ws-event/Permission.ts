@@ -6,8 +6,13 @@ import {
 } from "@opensessiongateway/protocol-library";
 import type { CurrentClientInfo } from "./CurrentClientInfo.js";
 import type { InstanceWorkspaceInfo } from "../runtime/instance-workspace-info.js";
+import { resolveTargetSessionContext } from "../runtime/target-context.js";
 
 type QueryFactory = () => Record<string, unknown>;
+
+function client(ctx: any): any {
+  return ctx?.client?._client;
+}
 
 function text(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
@@ -71,6 +76,12 @@ function defaultAction(src: Record<string, unknown>): PermissionDecision | null 
   return null;
 }
 
+function ok(value: unknown): boolean {
+  if (value === true) return true;
+  const src = record(value);
+  return src.data === true;
+}
+
 export function buildPermissionAskedPayload(input: {
   event: Record<string, unknown>;
   currentClientInfo: CurrentClientInfo;
@@ -127,37 +138,37 @@ function replyFromDecision(action: PermissionDecision): "once" | "reject" {
 export async function handleResolvePermissionRequest(
   ctx: any,
   payload: Record<string, unknown>,
-  resolvePermissionRoute: (permissionID: string) => { instanceWorkspaceDirectory: string; sessionID: string; displayID: string } | null,
+  resolvePermissionRoute: (permissionID: string) => { sessionID: string } | null,
 ): Promise<Record<string, unknown>> {
   const req = readResolvePermissionRequestPayload(payload);
+  const sessionID = text(record(payload).sessionID);
   if (!req.permissionID) {
     return { ok: false, permissionID: "", action: req.action, error: "permissionID is required" };
   }
 
   const route = resolvePermissionRoute(req.permissionID);
-  if (!route?.instanceWorkspaceDirectory) {
+  const target = await resolveTargetSessionContext(ctx, route?.sessionID || sessionID);
+  if (!target?.instanceWorkspaceDirectory) {
     return { ok: false, permissionID: req.permissionID, action: req.action, error: "target permission context not found" };
   }
 
-  const reply = ctx?.client?.permission?.reply;
-  if (typeof reply !== "function") {
-    return { ok: false, permissionID: req.permissionID, action: req.action, error: "permission reply API unavailable" };
-  }
-
   try {
-    const result = await Promise.resolve(reply({
-      requestID: req.permissionID,
-      directory: route.instanceWorkspaceDirectory,
-      reply: replyFromDecision(req.action),
-      message: req.reason || undefined,
+    const raw = client(ctx);
+    if (!raw || typeof raw.post !== "function") {
+      return { ok: false, permissionID: req.permissionID, action: req.action, error: "permission client unavailable" };
+    }
+    const response = await Promise.resolve(raw.post({
+      url: `/permission/${encodeURIComponent(req.permissionID)}/reply`,
+      query: { directory: target.instanceWorkspaceDirectory },
+      headers: { "Content-Type": "application/json" },
+      body: { reply: replyFromDecision(req.action), message: req.reason || undefined },
     }));
-    const src = record(result);
-    if (src.error) {
+    if (!ok(response)) {
       return {
         ok: false,
         permissionID: req.permissionID,
         action: req.action,
-        error: text(src.error) || "permission reply failed",
+        error: "permission reply failed",
       };
     }
     return {

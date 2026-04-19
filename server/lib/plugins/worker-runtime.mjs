@@ -138,8 +138,11 @@ function createOsgApi() {
     async listRuntimeManagedSessions(runtimeID) {
       return callHost("osg_list_runtime_managed_sessions", { runtimeID });
     },
+    async listRuntimeInstanceWorkspaces(runtimeID) {
+      return callHost("osg_list_runtime_instance_workspaces", { runtimeID });
+    },
     async listRuntimeWorkspaces(runtimeID) {
-      return callHost("osg_list_runtime_workspaces", { runtimeID });
+      return callHost("osg_list_runtime_instance_workspaces", { runtimeID });
     },
     async requestRuntime(payload) {
       return callHost("osg_request_runtime", payload && typeof payload === "object" ? payload : {});
@@ -159,6 +162,9 @@ function createOsgApi() {
     async abortClientSession(payload) {
       return callHost("osg_abort_client_session", payload && typeof payload === "object" ? payload : {});
     },
+    async compactSession(payload) {
+      return callHost("osg_compact_session", payload && typeof payload === "object" ? payload : {});
+    },
     async listAvailableModels(payload) {
       return callHost("osg_list_available_models", payload && typeof payload === "object" ? payload : {});
     },
@@ -167,6 +173,24 @@ function createOsgApi() {
     },
     async reloadClientInstanceWorkspace(payload) {
       return callHost("osg_reload_client_instance_workspace", payload && typeof payload === "object" ? payload : {});
+    },
+    async listRuntimePermissions(payload) {
+      return callHost("osg_list_runtime_permissions", payload && typeof payload === "object" ? payload : {});
+    },
+    async getRuntimePermission(payload) {
+      return callHost("osg_get_runtime_permission", payload && typeof payload === "object" ? payload : {});
+    },
+    async resolveRuntimePermission(payload) {
+      return callHost("osg_resolve_runtime_permission", payload && typeof payload === "object" ? payload : {});
+    },
+    async listRuntimeQuestions(payload) {
+      return callHost("osg_list_runtime_questions", payload && typeof payload === "object" ? payload : {});
+    },
+    async getRuntimeQuestion(payload) {
+      return callHost("osg_get_runtime_question", payload && typeof payload === "object" ? payload : {});
+    },
+    async replyRuntimeQuestion(payload) {
+      return callHost("osg_reply_runtime_question", payload && typeof payload === "object" ? payload : {});
     },
     async hasOnlineRuntime(runtimeID) {
       return callHost("osg_has_online_runtime", { runtimeID });

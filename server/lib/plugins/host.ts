@@ -12,7 +12,9 @@ import {
 } from "@/lib/runtime-hub";
 import {
   getManagedRuntimePermission,
+  getManagedRuntimeQuestion,
   listManagedRuntimePermissions,
+  listManagedRuntimeQuestions,
   listRuntimeClients,
   listRuntimeManagedSessions,
   type RuntimeClient,
@@ -70,12 +72,16 @@ type WorkerHostRequestMessage = {
     | "osg_rename_client_session"
     | "osg_set_client_display_session"
     | "osg_abort_client_session"
+    | "osg_compact_session"
     | "osg_list_available_models"
     | "osg_get_session_last_used_model"
     | "osg_reload_client_instance_workspace"
     | "osg_list_runtime_permissions"
     | "osg_get_runtime_permission"
     | "osg_resolve_runtime_permission"
+    | "osg_list_runtime_questions"
+    | "osg_get_runtime_question"
+    | "osg_reply_runtime_question"
     | "osg_has_online_runtime"
     | "osg_has_online_runtime_session"
     | "osg_require_online_runtime_session"
@@ -210,8 +216,20 @@ export type SessionStatusSnapshot = {
   runtimeID: string;
   sessionID: string;
   runtimeStatus: "online" | "offline";
-  sessionStatus: "idle" | "busy" | "error" | null;
-  currentStatus: string | null;
+  sessionState: "idle" | "busy" | "waiting" | "stopped" | null;
+  sessionReason:
+    | "completed"
+    | "pending"
+    | "tool"
+    | "generating"
+    | "reasoning"
+    | "compacting"
+    | "permission"
+    | "question"
+    | "aborted"
+    | "error"
+    | null;
+  sessionMeta: Record<string, unknown> | null;
   title: string | null;
   displayID: string | null;
   instanceWorkspaceDirectory: string | null;
@@ -222,8 +240,9 @@ export type SessionStatusSnapshot = {
 
 export type SessionStatusChangeField =
   | "runtimeStatus"
-  | "sessionStatus"
-  | "currentStatus"
+  | "sessionState"
+  | "sessionReason"
+  | "sessionMeta"
   | "title"
   | "displayID"
   | "instanceWorkspaceDirectory"
@@ -253,12 +272,31 @@ export type OsgServerPluginManifest = {
   description?: string;
 };
 
-export type PluginRuntimeClient = RuntimeClient & {
-  currentStatus: string | null;
+export type PluginRuntimeClient = {
+  runtimeID: string;
+  sessionID: string | null;
+  displayID: string | null;
+  port: number | null;
+  runtimeHost: string | null;
+  runtimeProtocol: string | null;
+  instanceWorkspaceDirectory: string | null;
+  title: string | null;
+  status: RuntimeClient["status"];
+  sessionState: RuntimeClient["sessionState"];
+  sessionReason: RuntimeClient["sessionReason"];
+  sessionMeta: RuntimeClient["sessionMeta"];
+  lastActiveTime: string | null;
+  activeCount: number;
+  lastHeartbeatAt: string | null;
+  updatedAt: string;
 };
 
 export type PluginManagedSession = {
   sessionID: string;
+  title: string | null;
+  state: PluginRuntimeClient["sessionState"];
+  reason: PluginRuntimeClient["sessionReason"];
+  meta: PluginRuntimeClient["sessionMeta"];
   lastActiveTime: string | null;
   activeCount: number;
 };
@@ -272,10 +310,11 @@ export type PluginRequestRuntimeResult = {
     exists: boolean;
     sessionID: string;
     title?: string;
-    status?: "idle" | "busy" | "error" | null;
+    state?: "idle" | "busy" | "waiting" | "stopped" | null;
+    reason?: "completed" | "pending" | "tool" | "generating" | "reasoning" | "compacting" | "permission" | "question" | "aborted" | "error" | null;
+    meta?: Record<string, unknown> | null;
     displayID?: string | null;
   };
-  currentStatus?: string | null;
   error?: string;
 };
 
@@ -296,6 +335,10 @@ export type PluginPermissionStatus =
   | "failed";
 
 export type PluginPermissionDecision = "approve" | "deny" | "cancel";
+
+export type PluginQuestionStatus = "created" | "pending" | "answered" | "rejected" | "failed";
+
+export type PluginQuestionReplyType = "answer" | "reject";
 
 export type PluginRuntimePermission = {
   permissionID: string;
@@ -320,6 +363,34 @@ export type PluginRuntimePermission = {
   dedupeKey: string | null;
   supersedesPermissionID: string | null;
   supersededByPermissionID: string | null;
+};
+
+export type PluginQuestionInfo = {
+  header: string;
+  question: string;
+  options: Array<{ label: string; description?: string }>;
+  multiple?: boolean;
+  custom?: boolean;
+};
+
+export type PluginRuntimeQuestion = {
+  questionID: string;
+  runtimeID: string;
+  sessionID: string | null;
+  displayID: string | null;
+  title: string;
+  questions: PluginQuestionInfo[];
+  detail: unknown;
+  status: PluginQuestionStatus;
+  requestedAt: string;
+  updatedAt: string;
+  answeredAt: string | null;
+  answers: string[][] | null;
+  actor: string | null;
+  reason: string | null;
+  message: string | null;
+  correlationID: string | null;
+  dedupeKey: string | null;
 };
 
 export type PluginStorageEntry<T = unknown> = {
@@ -370,6 +441,12 @@ export type PluginOsgApi = {
     runtimeID: string;
     sessionID: string;
   }) => Promise<{ ok: boolean; aborted: boolean; sessionID: string }>;
+  compactSession: (payload: {
+    runtimeID: string;
+    sessionID: string;
+    model: string;
+    auto?: boolean;
+  }) => Promise<{ ok: boolean; sessionID: string; model?: string; auto?: boolean; error?: string }>;
   listAvailableModels: (payload: {
     runtimeID: string;
     list?: number;
@@ -402,6 +479,25 @@ export type PluginOsgApi = {
     actor?: string;
     correlationID?: string;
   }) => Promise<{ ok: boolean; permissionID: string; action: PluginPermissionDecision; error?: string }>;
+  listRuntimeQuestions: (payload: {
+    runtimeID: string;
+    sessionID?: string;
+    status?: PluginQuestionStatus;
+    list?: number;
+  }) => Promise<{ realsize: number; list: PluginRuntimeQuestion[] }>;
+  getRuntimeQuestion: (payload: {
+    runtimeID: string;
+    questionID: string;
+  }) => Promise<PluginRuntimeQuestion | null>;
+  replyRuntimeQuestion: (payload: {
+    runtimeID: string;
+    questionID: string;
+    replyType: PluginQuestionReplyType;
+    answers?: string[][] | null;
+    reason?: string;
+    actor?: string;
+    correlationID?: string;
+  }) => Promise<{ ok: boolean; questionID: string; replyType: PluginQuestionReplyType; error?: string }>;
   hasOnlineRuntime: (runtimeID: string) => Promise<boolean>;
   hasOnlineRuntimeSession: (runtimeID: string, sessionID: string) => Promise<boolean>;
   requireOnlineRuntimeSession: (runtimeID: string, sessionID: string) => Promise<void>;
@@ -707,6 +803,21 @@ async function requestAbortClientSessionViaRuntime(payload: {
   return requestAbortSessionOfClient(payload.runtimeID, payload.sessionID);
 }
 
+async function requestCompactSessionViaRuntime(payload: {
+  runtimeID: string;
+  sessionID: string;
+  model: string;
+  auto?: boolean;
+}) {
+  await requireOnlineRuntimeSession(payload.runtimeID, payload.sessionID);
+  const { requestCompactSession } = await import("@/lib/v2/ws");
+  return requestCompactSession(payload.runtimeID, {
+    sessionID: payload.sessionID,
+    model: payload.model,
+    auto: payload.auto,
+  });
+}
+
 async function requestListAvailableModelsViaRuntime(payload: {
   runtimeID: string;
   list?: number;
@@ -749,6 +860,20 @@ async function requestResolvePermissionViaRuntime(payload: {
   return requestResolvePermission(payload.runtimeID, payload);
 }
 
+async function requestReplyQuestionViaRuntime(payload: {
+  runtimeID: string;
+  questionID: string;
+  replyType: PluginQuestionReplyType;
+  answers?: string[][] | null;
+  reason?: string;
+  actor?: string;
+  correlationID?: string;
+}) {
+  await requireOnlineRuntime(payload.runtimeID);
+  const { requestReplyQuestion } = await import("@/lib/v2/ws");
+  return requestReplyQuestion(payload.runtimeID, payload);
+}
+
 async function sendServerToastViaRuntime(payload: {
   runtimeID: string;
   displayID: string;
@@ -763,11 +888,23 @@ async function sendServerToastViaRuntime(payload: {
 }
 
 async function listPluginRuntimeClients(): Promise<PluginRuntimeClient[]> {
-  const clients = await listRuntimeClients();
-  const { readV2RuntimeCurrentStatus } = await import("@/lib/v2/ws");
-  return clients.map((item) => ({
-    ...item,
-    currentStatus: readV2RuntimeCurrentStatus(item.runtimeID),
+  return (await listRuntimeClients()).map((item) => ({
+    runtimeID: item.runtimeID,
+    sessionID: item.sessionID,
+    displayID: item.displayID,
+    port: item.port,
+    runtimeHost: item.runtimeHost,
+    runtimeProtocol: item.runtimeProtocol,
+    instanceWorkspaceDirectory: item.instanceWorkspaceDirectory,
+    title: item.title,
+    status: item.status,
+    sessionState: item.sessionState,
+    sessionReason: item.sessionReason,
+    sessionMeta: item.sessionMeta,
+    lastActiveTime: item.lastActiveTime,
+    activeCount: item.activeCount,
+    lastHeartbeatAt: item.lastHeartbeatAt,
+    updatedAt: item.updatedAt,
   }));
 }
 
@@ -798,6 +935,27 @@ async function getPluginRuntimePermission(payload: {
   permissionID: string;
 }): Promise<PluginRuntimePermission | null> {
   return getManagedRuntimePermission(payload.runtimeID, payload.permissionID);
+}
+
+async function listPluginRuntimeQuestions(payload: {
+  runtimeID: string;
+  sessionID?: string;
+  status?: PluginQuestionStatus;
+  list?: number;
+}): Promise<{ realsize: number; list: PluginRuntimeQuestion[] }> {
+  const list = await listManagedRuntimeQuestions(payload.runtimeID, {
+    sessionID: payload.sessionID,
+    status: payload.status,
+  });
+  const maxLen = Number.isInteger(payload.list) && Number(payload.list) > 0 ? Number(payload.list) : 20;
+  return { realsize: list.length, list: list.slice(0, maxLen) };
+}
+
+async function getPluginRuntimeQuestion(payload: {
+  runtimeID: string;
+  questionID: string;
+}): Promise<PluginRuntimeQuestion | null> {
+  return getManagedRuntimeQuestion(payload.runtimeID, payload.questionID);
 }
 
 async function requestRuntimeViaRuntime(payload: {
@@ -841,6 +999,9 @@ function createOsgApi(): PluginOsgApi {
     async abortClientSession(payload) {
       return requestAbortClientSessionViaRuntime(payload);
     },
+    async compactSession(payload) {
+      return requestCompactSessionViaRuntime(payload);
+    },
     async listAvailableModels(payload) {
       return requestListAvailableModelsViaRuntime(payload);
     },
@@ -858,6 +1019,15 @@ function createOsgApi(): PluginOsgApi {
     },
     async resolveRuntimePermission(payload) {
       return requestResolvePermissionViaRuntime(payload);
+    },
+    async listRuntimeQuestions(payload) {
+      return listPluginRuntimeQuestions(payload);
+    },
+    async getRuntimeQuestion(payload) {
+      return getPluginRuntimeQuestion(payload);
+    },
+    async replyRuntimeQuestion(payload) {
+      return requestReplyQuestionViaRuntime(payload);
     },
     async hasOnlineRuntime(runtimeID: string) {
       return hasOnlineRuntime(runtimeID);
@@ -974,8 +1144,9 @@ function sessionStatusTargetKey(target: SessionStatusHookTarget): string {
 function sessionStatusFingerprint(snapshot: SessionStatusSnapshot): string {
   return JSON.stringify({
     runtimeStatus: snapshot.runtimeStatus,
-    sessionStatus: snapshot.sessionStatus,
-    currentStatus: snapshot.currentStatus,
+    sessionState: snapshot.sessionState,
+    sessionReason: snapshot.sessionReason,
+    sessionMeta: snapshot.sessionMeta,
     title: snapshot.title,
     displayID: snapshot.displayID,
     instanceWorkspaceDirectory: snapshot.instanceWorkspaceDirectory,
@@ -990,14 +1161,19 @@ function sessionStatusChangedFields(previous: SessionStatusSnapshot | null, curr
   const changed: SessionStatusChangeField[] = [];
   const fields: SessionStatusChangeField[] = [
     "runtimeStatus",
-    "sessionStatus",
-    "currentStatus",
+    "sessionState",
+    "sessionReason",
+    "sessionMeta",
     "title",
     "displayID",
     "instanceWorkspaceDirectory",
     "runtimeHost",
   ];
   for (const field of fields) {
+    if (field === "sessionMeta") {
+      if (JSON.stringify(previous[field]) !== JSON.stringify(current[field])) changed.push(field);
+      continue;
+    }
     if (previous[field] !== current[field]) changed.push(field);
   }
   return changed;
@@ -1012,7 +1188,6 @@ async function resolveSessionStatusSnapshot(target: SessionStatusHookTarget): Pr
   if (!current && !session && !runtime) return null;
   const instanceWorkspaceDirectory = current?.instanceWorkspaceDirectory
     ?? null;
-  const { readV2RuntimeCurrentStatus } = await import("@/lib/v2/ws");
   const updatedAt =
     current?.updatedAt
     || session?.lastActiveTime
@@ -1024,8 +1199,9 @@ async function resolveSessionStatusSnapshot(target: SessionStatusHookTarget): Pr
     runtimeID: normalized.runtimeID,
     sessionID: normalized.sessionID,
     runtimeStatus: current?.status || (runtime?.wsBridge.connected ? "online" : "offline"),
-    sessionStatus: current?.sessionStatus ?? session?.status ?? null,
-    currentStatus: readV2RuntimeCurrentStatus(normalized.runtimeID),
+    sessionState: current?.sessionState ?? session?.state ?? null,
+    sessionReason: current?.sessionReason ?? session?.reason ?? null,
+    sessionMeta: current?.sessionMeta ?? session?.meta ?? null,
     title: current?.title ?? session?.title ?? null,
     displayID: current?.displayID ?? session?.displayID ?? null,
     instanceWorkspaceDirectory,
@@ -1863,6 +2039,20 @@ async function handleWorkerHostRequest(record: WorkerPluginRecord, message: Work
       return;
     }
 
+    if (message.action === "osg_compact_session") {
+      const runtimeID = typeof message.payload.runtimeID === "string" ? message.payload.runtimeID : "";
+      const sessionID = typeof message.payload.sessionID === "string" ? message.payload.sessionID : "";
+      const model = typeof message.payload.model === "string" ? message.payload.model : "";
+      const auto = message.payload.auto === true ? true : undefined;
+      replyToWorker(
+        record,
+        message.requestID,
+        true,
+        await requestCompactSessionViaRuntime({ runtimeID, sessionID, model, auto }),
+      );
+      return;
+    }
+
     if (message.action === "osg_list_available_models") {
       const runtimeID = typeof message.payload.runtimeID === "string" ? message.payload.runtimeID : "";
       const list = Number(message.payload.list);
@@ -1953,6 +2143,56 @@ async function handleWorkerHostRequest(record: WorkerPluginRecord, message: Work
         message.requestID,
         true,
         await requestResolvePermissionViaRuntime({ runtimeID, permissionID, action, reason, actor, correlationID }),
+      );
+      return;
+    }
+
+    if (message.action === "osg_list_runtime_questions") {
+      const runtimeID = typeof message.payload.runtimeID === "string" ? message.payload.runtimeID : "";
+      const sessionID = typeof message.payload.sessionID === "string" ? message.payload.sessionID : undefined;
+      const status = typeof message.payload.status === "string" ? message.payload.status as PluginQuestionStatus : undefined;
+      const list = Number(message.payload.list);
+      replyToWorker(
+        record,
+        message.requestID,
+        true,
+        await listPluginRuntimeQuestions({
+          runtimeID,
+          sessionID,
+          status,
+          list: Number.isInteger(list) && list > 0 ? list : undefined,
+        }),
+      );
+      return;
+    }
+
+    if (message.action === "osg_get_runtime_question") {
+      const runtimeID = typeof message.payload.runtimeID === "string" ? message.payload.runtimeID : "";
+      const questionID = typeof message.payload.questionID === "string" ? message.payload.questionID : "";
+      replyToWorker(
+        record,
+        message.requestID,
+        true,
+        await getPluginRuntimeQuestion({ runtimeID, questionID }),
+      );
+      return;
+    }
+
+    if (message.action === "osg_reply_runtime_question") {
+      const runtimeID = typeof message.payload.runtimeID === "string" ? message.payload.runtimeID : "";
+      const questionID = typeof message.payload.questionID === "string" ? message.payload.questionID : "";
+      const replyType = message.payload.replyType === "reject" ? "reject" : "answer";
+      const answers = Array.isArray(message.payload.answers)
+        ? message.payload.answers.map((item) => Array.isArray(item) ? item.map((entry) => typeof entry === "string" ? entry : String(entry ?? "")).filter(Boolean) : [])
+        : undefined;
+      const reason = typeof message.payload.reason === "string" ? message.payload.reason : undefined;
+      const actor = typeof message.payload.actor === "string" ? message.payload.actor : undefined;
+      const correlationID = typeof message.payload.correlationID === "string" ? message.payload.correlationID : undefined;
+      replyToWorker(
+        record,
+        message.requestID,
+        true,
+        await requestReplyQuestionViaRuntime({ runtimeID, questionID, replyType, answers, reason, actor, correlationID }),
       );
       return;
     }

@@ -57,8 +57,27 @@ export function normalizePermissionDecision(value: unknown): "approve" | "deny" 
   return "cancel";
 }
 
-export function busyLabel(value: string | null): "idle" | "busy" {
-  return (value || "").trim().toLowerCase() === "busy" ? "busy" : "idle";
+export function normalizeQuestionStatus(value: unknown):
+  | "created"
+  | "pending"
+  | "answered"
+  | "rejected"
+  | "failed"
+  | "" {
+  switch (normalizeString(value)) {
+    case "created":
+    case "pending":
+    case "answered":
+    case "rejected":
+    case "failed":
+      return normalizeString(value) as "created" | "pending" | "answered" | "rejected" | "failed";
+    default:
+      return "";
+  }
+}
+
+export function normalizeQuestionReplyType(value: unknown): "answer" | "reject" {
+  return normalizeString(value) === "reject" ? "reject" : "answer";
 }
 
 export function readLastActiveTime(value: { lastActiveTime?: string | null } | null | undefined): string {

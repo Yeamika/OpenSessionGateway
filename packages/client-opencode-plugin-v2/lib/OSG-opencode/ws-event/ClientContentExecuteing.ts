@@ -2,7 +2,10 @@ import {
   createClientContentExecuteingEnvelope,
   createClientContentExecuteingPayload,
   type ClientContentExecuteingPayload,
-} from "@opensessiongateway/protocol-library";
+  type ClientSessionMeta,
+  type ClientSessionReason,
+  type ClientSessionState,
+} from "@opensessiongateway/protocol-library/ws-protocol/ClientContentExecuteing.js";
 
 export function createClientContentExecuteing(
   input: {
@@ -11,6 +14,10 @@ export function createClientContentExecuteing(
     session?: {
       sessionID?: string
       title?: string
+      status?: "idle" | "busy" | "error"
+      state?: ClientSessionState | null
+      reason?: ClientSessionReason | null
+      meta?: ClientSessionMeta | null
     }
   },
 ): ClientContentExecuteingPayload {

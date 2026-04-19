@@ -1,6 +1,6 @@
 {
   "name": "@opensessiongateway/protocol-library",
-  "version": "0.0.3",
+  "version": "0.0.5",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -8,6 +8,7 @@
     "*": {
       "ws-protocol/AbortSessionOfClient.js": ["dist/ws-protocol/AbortSessionOfClient.d.ts"],
       "ws-protocol/AddPromot.js": ["dist/ws-protocol/AddPromot.d.ts"],
+      "ws-protocol/CompactSession.js": ["dist/ws-protocol/CompactSession.d.ts"],
       "ws-protocol/ClientContentExecuteing.js": ["dist/ws-protocol/ClientContentExecuteing.d.ts"],
       "ws-protocol/CreateNewSession.js": ["dist/ws-protocol/CreateNewSession.d.ts"],
       "ws-protocol/CurrentClient.js": ["dist/ws-protocol/CurrentClient.d.ts"],
@@ -19,6 +20,7 @@
       "ws-protocol/ShowToast.js": ["dist/ws-protocol/ShowToast.d.ts"],
       "ws-protocol/SessionList.js": ["dist/ws-protocol/SessionList.d.ts"],
       "ws-protocol/Permission.js": ["dist/ws-protocol/Permission.d.ts"],
+      "ws-protocol/Question.js": ["dist/ws-protocol/Question.d.ts"],
       "ws-protocol/RequestRuntime.js": ["dist/ws-protocol/RequestRuntime.d.ts"],
       "ws-basic/Connected.js": ["dist/ws-basic/Connected.d.ts"],
       "ws-basic/Error.js": ["dist/ws-basic/Error.d.ts"],
@@ -37,6 +39,10 @@
     "./ws-protocol/AddPromot.js": {
       "types": "./dist/ws-protocol/AddPromot.d.ts",
       "default": "./dist/ws-protocol/AddPromot.js"
+    },
+    "./ws-protocol/CompactSession.js": {
+      "types": "./dist/ws-protocol/CompactSession.d.ts",
+      "default": "./dist/ws-protocol/CompactSession.js"
     },
     "./ws-protocol/ClientContentExecuteing.js": {
       "types": "./dist/ws-protocol/ClientContentExecuteing.d.ts",
@@ -81,6 +87,10 @@
     "./ws-protocol/Permission.js": {
       "types": "./dist/ws-protocol/Permission.d.ts",
       "default": "./dist/ws-protocol/Permission.js"
+    },
+    "./ws-protocol/Question.js": {
+      "types": "./dist/ws-protocol/Question.d.ts",
+      "default": "./dist/ws-protocol/Question.js"
     },
     "./ws-protocol/RequestRuntime.js": {
       "types": "./dist/ws-protocol/RequestRuntime.d.ts",

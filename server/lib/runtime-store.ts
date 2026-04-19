@@ -2,10 +2,13 @@ import type { RuntimeClientView } from "@/lib/runtime/view";
 import { findRuntimeSessionBySessionID, listRuntimeSessions } from "@/lib/ClientModel/session/registry";
 import { getRuntimePermission, listRuntimePermissions } from "@/lib/permission/registry";
 import type { RuntimePermissionRecord, PermissionStatus } from "@/lib/permission/model";
+import { getRuntimeQuestion, listRuntimeQuestions } from "@/lib/question/registry";
+import type { RuntimeQuestionRecord, QuestionStatus } from "@/lib/question/model";
 import { listV2RuntimeClientsView } from "@/lib/v2/ws";
 
 export type RuntimeClient = RuntimeClientView;
 export type RuntimePermission = RuntimePermissionRecord;
+export type RuntimeQuestion = RuntimeQuestionRecord;
 
 export async function listRuntimeClients(): Promise<RuntimeClient[]> {
   return listV2RuntimeClientsView();
@@ -50,11 +53,19 @@ export async function resolveRuntimeBySessionID(sessionID: string): Promise<Runt
 
 export async function listRuntimeManagedSessions(runtimeID: string): Promise<Array<{
   sessionID: string;
+  title: string | null;
+  state: RuntimeClient["sessionState"];
+  reason: RuntimeClient["sessionReason"];
+  meta: RuntimeClient["sessionMeta"];
   lastActiveTime: string | null;
   activeCount: number;
 }>> {
   return listRuntimeSessions(runtimeID).map((row) => ({
     sessionID: row.sessionID,
+    title: row.title,
+    state: row.state,
+    reason: row.reason,
+    meta: row.meta,
     lastActiveTime: row.lastActiveTime,
     activeCount: row.activeCount,
   }));
@@ -88,4 +99,15 @@ export async function listManagedRuntimePermissions(runtimeID: string, filters?:
 
 export async function getManagedRuntimePermission(runtimeID: string, permissionID: string): Promise<RuntimePermission | null> {
   return getRuntimePermission(runtimeID, permissionID);
+}
+
+export async function listManagedRuntimeQuestions(runtimeID: string, filters?: {
+  sessionID?: string;
+  status?: QuestionStatus;
+}): Promise<RuntimeQuestion[]> {
+  return listRuntimeQuestions(runtimeID, filters);
+}
+
+export async function getManagedRuntimeQuestion(runtimeID: string, questionID: string): Promise<RuntimeQuestion | null> {
+  return getRuntimeQuestion(runtimeID, questionID);
 }

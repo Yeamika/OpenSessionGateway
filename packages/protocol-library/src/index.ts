@@ -1,10 +1,21 @@
 export type { CurrentClientInfo, CurrentClientInfoCallbacks, QueueShape } from "./ws-protocol/CurrentClient.js";
 export { createFallbackCurrentClientInfo, readCurrentClientInfo } from "./ws-protocol/CurrentClient.js";
-export type { ClientContentExecuteingPayload } from "./ws-protocol/ClientContentExecuteing.js";
+export type {
+  ClientContentExecuteingPayload,
+  ClientSessionMeta,
+  ClientSessionReason,
+  ClientSessionState,
+  ClientSessionStatus,
+} from "./ws-protocol/ClientContentExecuteing.js";
 export {
   CLIENT_CONTENT_EXECUTEING_EVENT,
   createClientContentExecuteingEnvelope,
   createClientContentExecuteingPayload,
+  legacySessionStatusFromState,
+  normalizeClientSessionMeta,
+  normalizeClientSessionReason,
+  normalizeClientSessionState,
+  normalizeClientSessionStatus,
   readClientContentExecuteingPayload,
 } from "./ws-protocol/ClientContentExecuteing.js";
 export type {
@@ -27,6 +38,26 @@ export {
   RESOLVE_PERMISSION_REQUEST_EVENT,
 } from "./ws-protocol/Permission.js";
 export type {
+  QuestionAskedPayload,
+  QuestionInfo,
+  QuestionOption,
+  QuestionReplyType,
+  QuestionStatus,
+  QuestionUpdatedPayload,
+  ReplyQuestionRequestPayload,
+} from "./ws-protocol/Question.js";
+export {
+  createQuestionAskedPayload,
+  createQuestionUpdatedPayload,
+  createReplyQuestionRequestPayload,
+  QUESTION_ASKED_EVENT,
+  QUESTION_UPDATED_EVENT,
+  REPLY_QUESTION_REQUEST_EVENT,
+  readQuestionAskedPayload,
+  readQuestionUpdatedPayload,
+  readReplyQuestionRequestPayload,
+} from "./ws-protocol/Question.js";
+export type {
   RequestRuntimeRequestPayload,
   RequestRuntimeResponsePayload,
 } from "./ws-protocol/RequestRuntime.js";
@@ -35,6 +66,12 @@ export {
   readRequestRuntimeResponsePayload,
   REQUEST_RUNTIME_EVENT,
 } from "./ws-protocol/RequestRuntime.js";
+export type { CompactSessionRequest, CompactSessionResponse } from "./ws-protocol/CompactSession.js";
+export {
+  COMPACT_SESSION_EVENT,
+  createCompactSessionRequest,
+  readCompactSessionResponse,
+} from "./ws-protocol/CompactSession.js";
 export type { ConnectedPayload } from "./ws-basic/Connected.js";
 export { CONNECTED_EVENT, createConnectedEnvelope, createConnectedPayload, readConnectedEnvelope, readConnectedPayload } from "./ws-basic/Connected.js";
 export { ERROR_EVENT, createBasicError, readBasicError } from "./ws-basic/Error.js";

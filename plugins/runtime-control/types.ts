@@ -12,6 +12,10 @@ export type RuntimeControlPermissionStatus =
 
 export type RuntimeControlPermissionDecision = "approve" | "deny" | "cancel";
 
+export type RuntimeControlQuestionStatus = "created" | "pending" | "answered" | "rejected" | "failed";
+
+export type RuntimeControlQuestionReplyType = "answer" | "reject";
+
 export type RuntimeControlPermission = {
   permissionID: string;
   runtimeID: string;
@@ -37,6 +41,32 @@ export type RuntimeControlPermission = {
   supersededByPermissionID: string | null;
 };
 
+export type RuntimeControlQuestion = {
+  questionID: string;
+  runtimeID: string;
+  sessionID: string | null;
+  displayID: string | null;
+  title: string;
+  questions: Array<{
+    header: string;
+    question: string;
+    options: Array<{ label: string; description?: string }>;
+    multiple?: boolean;
+    custom?: boolean;
+  }>;
+  detail: unknown;
+  status: RuntimeControlQuestionStatus;
+  requestedAt: string;
+  updatedAt: string;
+  answeredAt: string | null;
+  answers: string[][] | null;
+  actor: string | null;
+  reason: string | null;
+  message: string | null;
+  correlationID: string | null;
+  dedupeKey: string | null;
+};
+
 export type RuntimeControlOsgApi = PluginOsgApi & {
   requestRuntime: (payload: {
     runtimeID: string;
@@ -50,10 +80,11 @@ export type RuntimeControlOsgApi = PluginOsgApi & {
       exists: boolean;
       sessionID: string;
       title?: string;
-      status?: "idle" | "busy" | "error" | null;
+      state?: "idle" | "busy" | "waiting" | "stopped" | null;
+      reason?: "completed" | "pending" | "tool" | "generating" | "reasoning" | "compacting" | "permission" | "question" | "aborted" | "error" | null;
+      meta?: Record<string, unknown> | null;
       displayID?: string | null;
     };
-    currentStatus?: string | null;
     error?: string;
   }>;
   listRuntimeInstanceWorkspaces: (runtimeID: string) => Promise<Array<{
@@ -84,6 +115,25 @@ export type RuntimeControlOsgApi = PluginOsgApi & {
     actor?: string;
     correlationID?: string;
   }) => Promise<{ ok: boolean; permissionID: string; action: RuntimeControlPermissionDecision; error?: string }>;
+  listRuntimeQuestions: (payload: {
+    runtimeID: string;
+    sessionID?: string;
+    status?: RuntimeControlQuestionStatus;
+    list?: number;
+  }) => Promise<{ realsize: number; list: RuntimeControlQuestion[] }>;
+  getRuntimeQuestion: (payload: {
+    runtimeID: string;
+    questionID: string;
+  }) => Promise<RuntimeControlQuestion | null>;
+  replyRuntimeQuestion: (payload: {
+    runtimeID: string;
+    questionID: string;
+    replyType: RuntimeControlQuestionReplyType;
+    answers?: string[][] | null;
+    reason?: string;
+    actor?: string;
+    correlationID?: string;
+  }) => Promise<{ ok: boolean; questionID: string; replyType: RuntimeControlQuestionReplyType; error?: string }>;
 };
 
 export type RuntimeControlServices = {

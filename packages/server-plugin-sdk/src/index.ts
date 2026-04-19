@@ -37,8 +37,20 @@ export type SessionStatusSnapshot = {
   runtimeID: string;
   sessionID: string;
   runtimeStatus: "online" | "offline";
-  sessionStatus: "idle" | "busy" | "error" | null;
-  currentStatus: string | null;
+  sessionState: "idle" | "busy" | "waiting" | "stopped" | null;
+  sessionReason:
+    | "completed"
+    | "pending"
+    | "tool"
+    | "generating"
+    | "reasoning"
+    | "compacting"
+    | "permission"
+    | "question"
+    | "aborted"
+    | "error"
+    | null;
+  sessionMeta: Record<string, unknown> | null;
   title: string | null;
   displayID: string | null;
   instanceWorkspaceDirectory: string | null;
@@ -49,8 +61,9 @@ export type SessionStatusSnapshot = {
 
 export type SessionStatusChangeField =
   | "runtimeStatus"
-  | "sessionStatus"
-  | "currentStatus"
+  | "sessionState"
+  | "sessionReason"
+  | "sessionMeta"
   | "title"
   | "displayID"
   | "instanceWorkspaceDirectory"
@@ -90,8 +103,20 @@ export type PluginRuntimeClient = {
   instanceWorkspaceDirectory: string | null;
   title: string | null;
   status: "online" | "offline";
-  sessionStatus: "idle" | "busy" | "error" | null;
-  currentStatus: string | null;
+  sessionState: "idle" | "busy" | "waiting" | "stopped" | null;
+  sessionReason:
+    | "completed"
+    | "pending"
+    | "tool"
+    | "generating"
+    | "reasoning"
+    | "compacting"
+    | "permission"
+    | "question"
+    | "aborted"
+    | "error"
+    | null;
+  sessionMeta: Record<string, unknown> | null;
   lastActiveTime: string | null;
   activeCount: number;
   lastHeartbeatAt: string | null;
@@ -100,6 +125,21 @@ export type PluginRuntimeClient = {
 
 export type PluginManagedSession = {
   sessionID: string;
+  title: string | null;
+  state: "idle" | "busy" | "waiting" | "stopped" | null;
+  reason:
+    | "completed"
+    | "pending"
+    | "tool"
+    | "generating"
+    | "reasoning"
+    | "compacting"
+    | "permission"
+    | "question"
+    | "aborted"
+    | "error"
+    | null;
+  meta: Record<string, unknown> | null;
   lastActiveTime: string | null;
   activeCount: number;
 };
@@ -113,10 +153,11 @@ export type PluginRequestRuntimeResult = {
     exists: boolean;
     sessionID: string;
     title?: string;
-    status?: "idle" | "busy" | "error" | null;
+    state?: "idle" | "busy" | "waiting" | "stopped" | null;
+    reason?: "completed" | "pending" | "tool" | "generating" | "reasoning" | "compacting" | "permission" | "question" | "aborted" | "error" | null;
+    meta?: Record<string, unknown> | null;
     displayID?: string | null;
   };
-  currentStatus?: string | null;
   error?: string;
 };
 
@@ -137,6 +178,10 @@ export type PluginPermissionStatus =
   | "failed";
 
 export type PluginPermissionDecision = "approve" | "deny" | "cancel";
+
+export type PluginQuestionStatus = "created" | "pending" | "answered" | "rejected" | "failed";
+
+export type PluginQuestionReplyType = "answer" | "reject";
 
 export type PluginRuntimePermission = {
   permissionID: string;
@@ -161,6 +206,34 @@ export type PluginRuntimePermission = {
   dedupeKey: string | null;
   supersedesPermissionID: string | null;
   supersededByPermissionID: string | null;
+};
+
+export type PluginQuestionInfo = {
+  header: string;
+  question: string;
+  options: Array<{ label: string; description?: string }>;
+  multiple?: boolean;
+  custom?: boolean;
+};
+
+export type PluginRuntimeQuestion = {
+  questionID: string;
+  runtimeID: string;
+  sessionID: string | null;
+  displayID: string | null;
+  title: string;
+  questions: PluginQuestionInfo[];
+  detail: unknown;
+  status: PluginQuestionStatus;
+  requestedAt: string;
+  updatedAt: string;
+  answeredAt: string | null;
+  answers: string[][] | null;
+  actor: string | null;
+  reason: string | null;
+  message: string | null;
+  correlationID: string | null;
+  dedupeKey: string | null;
 };
 
 export type PluginStorageEntry<T = unknown> = {
@@ -211,6 +284,12 @@ export type PluginOsgApi = {
     runtimeID: string;
     sessionID: string;
   }) => Promise<{ ok: boolean; aborted: boolean; sessionID: string }>;
+  compactSession: (payload: {
+    runtimeID: string;
+    sessionID: string;
+    model: string;
+    auto?: boolean;
+  }) => Promise<{ ok: boolean; sessionID: string; model?: string; auto?: boolean; error?: string }>;
   listAvailableModels: (payload: {
     runtimeID: string;
     list?: number;
@@ -270,6 +349,25 @@ export type PluginOsgApi = {
     actor?: string;
     correlationID?: string;
   }) => Promise<{ ok: boolean; permissionID: string; action: PluginPermissionDecision; error?: string }>;
+  listRuntimeQuestions: (payload: {
+    runtimeID: string;
+    sessionID?: string;
+    status?: PluginQuestionStatus;
+    list?: number;
+  }) => Promise<{ realsize: number; list: PluginRuntimeQuestion[] }>;
+  getRuntimeQuestion: (payload: {
+    runtimeID: string;
+    questionID: string;
+  }) => Promise<PluginRuntimeQuestion | null>;
+  replyRuntimeQuestion: (payload: {
+    runtimeID: string;
+    questionID: string;
+    replyType: PluginQuestionReplyType;
+    answers?: string[][] | null;
+    reason?: string;
+    actor?: string;
+    correlationID?: string;
+  }) => Promise<{ ok: boolean; questionID: string; replyType: PluginQuestionReplyType; error?: string }>;
 };
 
 export type McpPluginInfo = {

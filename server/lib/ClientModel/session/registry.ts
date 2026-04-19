@@ -25,7 +25,7 @@ function sortSessions(rows: RuntimeSessionBundle[]): RuntimeSessionBundle[] {
     }
     const activeTime = (b.lastActiveTime || "").localeCompare(a.lastActiveTime || "");
     if (activeTime !== 0) return activeTime;
-    const status = (b.status || "").localeCompare(a.status || "");
+    const status = (b.state || b.status || "").localeCompare(a.state || a.status || "");
     if (status !== 0) return status;
     const title = (a.title || "").localeCompare(b.title || "");
     if (title !== 0) return title;

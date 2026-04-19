@@ -1,3 +1,9 @@
+import {
+  normalizeClientSessionMeta,
+  normalizeClientSessionReason,
+  normalizeClientSessionState,
+} from "./ClientContentExecuteing.js";
+
 export const REQUEST_RUNTIME_EVENT = "RequestRuntime";
 
 export type RequestRuntimeRequestPayload = {
@@ -13,19 +19,16 @@ export type RequestRuntimeResponsePayload = {
     exists: boolean;
     sessionID: string;
     title?: string;
-    status?: "idle" | "busy" | "error" | null;
+    state?: "idle" | "busy" | "waiting" | "stopped" | null;
+    reason?: "completed" | "pending" | "tool" | "generating" | "reasoning" | "compacting" | "permission" | "question" | "aborted" | "error" | null;
+    meta?: Record<string, unknown> | null;
     displayID?: string | null;
   };
-  currentStatus?: string | null;
   error?: string;
 };
 
 function text(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
-}
-
-function nullableStatus(value: unknown): "idle" | "busy" | "error" | null {
-  return value === "idle" || value === "busy" || value === "error" ? value : null;
 }
 
 export function createRequestRuntimePayload(input: {
@@ -48,10 +51,11 @@ export function readRequestRuntimeResponsePayload(raw: unknown): RequestRuntimeR
       exists: sessionSrc.exists === true,
       sessionID: text(sessionSrc.sessionID),
       title: text(sessionSrc.title) || undefined,
-      status: nullableStatus(sessionSrc.status),
+      state: normalizeClientSessionState(sessionSrc.state) || null,
+      reason: normalizeClientSessionReason(sessionSrc.reason) || null,
+      meta: normalizeClientSessionMeta(sessionSrc.meta) || null,
       displayID: text(sessionSrc.displayID) || null,
     },
-    currentStatus: text(src.currentStatus) || null,
     error: text(src.error) || undefined,
   };
 }

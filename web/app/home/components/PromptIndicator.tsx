@@ -3,14 +3,14 @@ import type { ClientItem } from "../types";
 import { promptClass } from "../utils";
 
 export function PromptIndicator({ client, spin, delay }: { client: ClientItem; spin: number; delay: number }) {
-  const cls = `nancy-prompt ${promptClass(client.sessionStatus, client.status)}`;
+  const cls = `nancy-prompt ${promptClass(client.sessionState, client.status)}`;
   if (client.status === "offline") {
     return <div className={cls}><span className="nancy-prompt-offline">!</span></div>;
   }
-  if (client.sessionStatus === "error") {
+  if (client.sessionState === "stopped" || client.sessionState === "waiting") {
     return <div className={cls}><span className="nancy-prompt-error">!</span></div>;
   }
-  if (client.sessionStatus === "busy") {
+  if (client.sessionState === "busy") {
     return <div className={cls}><span className="nancy-prompt-spin">{SPIN[spin % SPIN.length]}</span></div>;
   }
   return (

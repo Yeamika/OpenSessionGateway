@@ -2,6 +2,7 @@ import { handleListAvailableModels } from "./ws-event/ListAvailableModels.js";
 import { handleListLastUsedModelOfSession } from "./ws-event/ListLastUsedModelOfSession.js";
 import { handleGetSessionMsg } from "./ws-event/GetSessionMsg.js";
 import { handleAbortSessionOfClient } from "./ws-event/AbortSessionOfClient.js";
+import { handleCompactSession } from "./ws-event/CompactSession.js";
 import { handleRenameSessionOfClient } from "./ws-event/RenameSessionOfClient.js";
 import { handleSetClientDisplaySession } from "./ws-event/SetClientDisplaySession.js";
 import { handleAddPromot } from "./ws-event/AddPromot.js";
@@ -10,9 +11,11 @@ import type { SessionListResponse } from "./ws-event/SessionList.js";
 import { handleShowToast } from "./ws-event/ShowToast.js";
 import { handleRequestInstanceWorkspaceReload } from "./ws-event/RequestInstanceWorkspaceReload.js";
 import { buildPermissionResolvedPayload, handleResolvePermissionRequest } from "./ws-event/Permission.js";
+import { buildQuestionResolvedPayload, handleReplyQuestionRequest } from "./ws-event/Question.js";
 import { handleRequestRuntime } from "./ws-event/RequestRuntime.js";
 import {
   REQUEST_RUNTIME_EVENT,
+  REPLY_QUESTION_REQUEST_EVENT,
   RESOLVE_PERMISSION_REQUEST_EVENT,
   readWsEnvelope,
 } from "@opensessiongateway/protocol-library";
@@ -28,22 +31,25 @@ type ServerEventDeps = {
   ListSession: (payload?: { list?: number; regex?: string }) => Promise<SessionListResponse>;
   RequestInstanceWorkspaceReload: (payload?: { instanceWorkspaceDirectory?: string; title?: string }) => Promise<unknown>;
   resolveInstanceWorkspaceInfo: () => { instanceWorkspaceDirectory: string; title: string } | null;
-  resolvePermissionRoute: (permissionID: string) => { instanceWorkspaceDirectory: string; sessionID: string; displayID: string } | null;
+  resolvePermissionRoute: (permissionID: string) => { sessionID: string } | null;
+  resolveQuestionRoute: (questionID: string) => { sessionID: string } | null;
   sendPermissionUpdated: (payload: Record<string, unknown>) => boolean;
+  sendQuestionUpdated: (payload: Record<string, unknown>) => boolean;
   reportClientContentExecuteing: (payload: {
     displayID?: string;
     instanceWorkspaceDirectory?: string;
-    session?: { sessionID?: string; title?: string; status?: "idle" | "busy" | "error" };
+    session?: {
+      sessionID?: string;
+      title?: string;
+      status?: "idle" | "busy" | "error";
+      state?: "idle" | "busy" | "waiting" | "stopped" | null;
+      reason?: "completed" | "pending" | "tool" | "generating" | "reasoning" | "compacting" | "permission" | "question" | "aborted" | "error" | null;
+      meta?: Record<string, unknown> | null;
+    };
   }, force?: boolean) => boolean;
 };
 
 type RouteHandler = (payload: Record<string, unknown>, deps: ServerEventDeps) => Promise<unknown>;
-
-function textSessionID(value: unknown): string | null {
-  const src = value && typeof value === "object" ? value as Record<string, unknown> : {};
-  const sessionID = typeof src.sessionID === "string" ? src.sessionID.trim() : "";
-  return sessionID || null;
-}
 
 function normalizeType(raw: unknown): string {
   const text = typeof raw === "string" ? raw.trim() : "";
@@ -60,6 +66,7 @@ export async function handleServerEvent(message: unknown, deps: ServerEventDeps)
     renamesessionofclient: async (routePayload) => handleRenameSessionOfClient(deps.ctx, deps.query, routePayload),
     setclientdisplaysession: async (routePayload) => handleSetClientDisplaySession(deps.ctx, deps.query, routePayload),
     abortsessionofclient: async (routePayload) => handleAbortSessionOfClient(deps.ctx, deps.query, routePayload),
+    compactsession: async (routePayload) => handleCompactSession(deps.ctx, routePayload),
     listavailablemodels: async (routePayload) => handleListAvailableModels(deps.ctx, deps.query, routePayload),
     listlastusedmodelofsession: async (routePayload) => handleListLastUsedModelOfSession(deps.ctx, deps.query, deps.runtimeID, routePayload),
     getsessionmsg: async (routePayload) => handleGetSessionMsg(deps.ctx, deps.query, deps.runtimeID, routePayload),
@@ -72,11 +79,33 @@ export async function handleServerEvent(message: unknown, deps: ServerEventDeps)
       const permissionID = typeof src.permissionID === "string" ? src.permissionID : "";
       const action = src.action === "approve" || src.action === "deny" ? src.action : "cancel";
       const route = permissionID ? deps.resolvePermissionRoute(permissionID) : null;
+      const sessionID = typeof routePayload.sessionID === "string" ? routePayload.sessionID : route?.sessionID || null;
       if (permissionID) {
         deps.sendPermissionUpdated(buildPermissionResolvedPayload({
           permissionID,
-          sessionID: route?.sessionID || null,
+          sessionID,
           action,
+          actor: typeof routePayload.actor === "string" ? routePayload.actor : null,
+          reason: typeof routePayload.reason === "string" ? routePayload.reason : null,
+          correlationID: typeof routePayload.correlationID === "string" ? routePayload.correlationID : null,
+          ok: src.ok === true,
+          error: typeof src.error === "string" ? src.error : null,
+        }));
+      }
+      return result;
+    },
+    [normalizeType(REPLY_QUESTION_REQUEST_EVENT)]: async (routePayload) => {
+      const result = await handleReplyQuestionRequest(deps.ctx, routePayload);
+      const src = result && typeof result === "object" ? (result as Record<string, unknown>) : {};
+      const questionID = typeof src.questionID === "string" ? src.questionID : "";
+      const route = questionID ? deps.resolveQuestionRoute(questionID) : null;
+      const sessionID = typeof routePayload.sessionID === "string" ? routePayload.sessionID : route?.sessionID || null;
+      if (questionID) {
+        deps.sendQuestionUpdated(buildQuestionResolvedPayload({
+          questionID,
+          sessionID,
+          replyType: src.replyType === "reject" ? "reject" : "answer",
+          answers: Array.isArray(routePayload.answers) ? routePayload.answers as string[][] : null,
           actor: typeof routePayload.actor === "string" ? routePayload.actor : null,
           reason: typeof routePayload.reason === "string" ? routePayload.reason : null,
           correlationID: typeof routePayload.correlationID === "string" ? routePayload.correlationID : null,

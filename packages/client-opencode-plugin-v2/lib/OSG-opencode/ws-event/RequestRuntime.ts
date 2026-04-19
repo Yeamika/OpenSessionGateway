@@ -1,5 +1,6 @@
 import { createRequestRuntimePayload } from "@opensessiongateway/protocol-library";
 import type { CurrentClientInfo } from "./CurrentClientInfo.js";
+import { readCurrentSessionStateInfo } from "./CurrentClientInfo.js";
 import type { SessionListResponse } from "./SessionList.js";
 import { resolveTargetSessionContext } from "../runtime/target-context.js";
 
@@ -12,27 +13,14 @@ type ReportPayload = {
     sessionID?: string;
     title?: string;
     status?: "idle" | "busy" | "error";
+    state?: "idle" | "busy" | "waiting" | "stopped" | null;
+    reason?: "completed" | "pending" | "tool" | "generating" | "reasoning" | "compacting" | "permission" | "question" | "aborted" | "error" | null;
+    meta?: Record<string, unknown> | null;
   };
 };
 
 function text(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
-}
-
-function normalizeSessionStatus(value: unknown): "idle" | "busy" | "error" | null {
-  const status = text(value).toLowerCase();
-  if (status === "idle") return "idle";
-  if (status === "interrupted" || status === "error") return "error";
-  if (status) return "busy";
-  return null;
-}
-
-function currentStatusFromSessionStatus(value: "idle" | "busy" | "error" | null, fallback: string): string | null {
-  if (value === "idle") return "Idle";
-  if (value === "busy") return "Busy";
-  if (value === "error") return "Interrupted";
-  const current = text(fallback);
-  return current || null;
 }
 
 function displayIDForTarget(query: QueryFactory, current: CurrentClientInfo, sessionID: string): string | undefined {
@@ -74,8 +62,9 @@ export async function handleRequestRuntime(input: {
   const sessionTarget = await resolveTargetSessionContext(input.ctx, req.sessionID);
   const sessionList = await input.listSession({ list: 200 }).catch(() => ({ meta: { matched: 0 }, sessions: [] }));
   const sessionRow = readSessionRow(sessionList, req.sessionID);
-  const sessionStatus = normalizeSessionStatus(sessionRow?.status);
-  const currentStatus = currentStatusFromSessionStatus(sessionStatus, currentInfo.status);
+  const currentSessionState = currentInfo.sessionID === req.sessionID
+    ? readCurrentSessionStateInfo(currentInfoRaw)
+    : { state: null, reason: null, meta: null };
 
   const reportPayload: ReportPayload | null = sessionTarget
     ? {
@@ -83,7 +72,9 @@ export async function handleRequestRuntime(input: {
         session: {
           sessionID: sessionTarget.sessionID,
           title: sessionRow?.title,
-          status: sessionStatus || undefined,
+          state: currentSessionState.state,
+          reason: currentSessionState.reason,
+          meta: currentSessionState.meta,
         },
         ...(displayIDForTarget(input.query, currentInfo, sessionTarget.sessionID)
           ? { displayID: displayIDForTarget(input.query, currentInfo, sessionTarget.sessionID) }
@@ -102,9 +93,10 @@ export async function handleRequestRuntime(input: {
       exists: Boolean(sessionTarget),
       sessionID: req.sessionID,
       title: sessionRow?.title,
-      status: sessionStatus,
+      state: currentSessionState.state,
+      reason: currentSessionState.reason,
+      meta: currentSessionState.meta,
       displayID: displayIDForTarget(input.query, currentInfo, req.sessionID) || null,
     },
-    currentStatus,
   };
 }

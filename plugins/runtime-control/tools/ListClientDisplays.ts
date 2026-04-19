@@ -1,4 +1,4 @@
-import { busyLabel, normalizeList, normalizeRegex, normalizeString, readActiveCount, readLastActiveTime } from "../common.js";
+import { normalizeList, normalizeRegex, normalizeString, readActiveCount, readLastActiveTime } from "../common.js";
 import type { RuntimeControlServices } from "../types.js";
 
 export const LIST_CLIENT_DISPLAYS_TOOL = {
@@ -22,7 +22,9 @@ type DisplayView = {
   sessionID: string;
   title: string;
   instanceWorkspaceDirectory: string;
-  sessionStatus: "idle" | "busy";
+  sessionState: "idle" | "busy" | "waiting" | "stopped" | null;
+  sessionReason: "completed" | "pending" | "tool" | "generating" | "reasoning" | "compacting" | "permission" | "question" | "aborted" | "error" | null;
+  sessionMeta: Record<string, unknown> | null;
   lastActiveTime: string;
   activeCount: number;
 };
@@ -59,7 +61,9 @@ export function createListClientDisplaysToolHandler(services: RuntimeControlServ
         sessionID: normalizeString(item.sessionID),
         title: normalizeString(item.title),
         instanceWorkspaceDirectory: normalizeString((item as { instanceWorkspaceDirectory?: string | null }).instanceWorkspaceDirectory),
-        sessionStatus: busyLabel(item.sessionStatus),
+        sessionState: item.sessionState || null,
+        sessionReason: item.sessionReason || null,
+        sessionMeta: item.sessionMeta || null,
         lastActiveTime: readLastActiveTime(item as { lastActiveTime?: string | null }),
         activeCount: readActiveCount(item as { activeCount?: number }),
       };

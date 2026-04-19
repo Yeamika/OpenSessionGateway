@@ -1,6 +1,6 @@
 {
   "name": "@opensessiongateway/client-opencode-plugin-v2",
-  "version": "0.0.5",
+  "version": "0.0.10",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -13,8 +13,8 @@
   "dependencies": {
     "@opencode-ai/plugin": "latest",
     "@opencode-ai/sdk": "latest",
-    "@opensessiongateway/client-library": "0.0.4",
-    "@opensessiongateway/protocol-library": "0.0.3",
+    "@opensessiongateway/client-library": "0.0.5",
+    "@opensessiongateway/protocol-library": "0.0.5",
     "ws": "^8.18.0"
   },
   "devDependencies": {

@@ -5,6 +5,7 @@ import { ThemeIcon } from "./home/components/ThemeIcon";
 import { BUILD_STAMP } from "./home/constants";
 import { useMonitorStream } from "./home/hooks/use-monitor-stream";
 import { useUiPreferences } from "./home/hooks/use-ui-preferences";
+import { sessionBucket, sessionStatusLabel } from "./home/utils";
 import type { ClientItem } from "./home/types";
 import { cardKey, displayTitle, runtimeKey, sessionLampColor, shortRuntimeLabel, workspaceGroupKey, workspaceKey, workspaceLabel } from "./home/utils";
 
@@ -134,8 +135,8 @@ export default function Page() {
           runtimeID: workspace.runtimeID,
           label: workspace.label,
           clientCount: workspace.clients.length,
-          busyCount: workspace.clients.filter((client) => client.sessionStatus === "busy").length,
-          errorCount: workspace.clients.filter((client) => client.sessionStatus === "error").length,
+          busyCount: workspace.clients.filter((client) => client.sessionState === "busy").length,
+          errorCount: workspace.clients.filter((client) => client.sessionState === "waiting" || client.sessionState === "stopped").length,
           lastActiveTime: sorted[0]?.lastActiveTime || null,
         };
       })
@@ -149,9 +150,9 @@ export default function Page() {
     const online = clients.filter((client) => client.status === "online").length;
     const stale = clients.filter((client) => client.status === "stale").length;
     const offline = clients.filter((client) => client.status === "offline").length;
-    const busy = clients.filter((client) => client.sessionStatus === "busy").length;
-    const idle = clients.filter((client) => client.sessionStatus === "idle").length;
-    const error = clients.filter((client) => client.sessionStatus === "error").length;
+    const busy = clients.filter((client) => client.sessionState === "busy").length;
+    const idle = clients.filter((client) => client.sessionState === "idle").length;
+    const error = clients.filter((client) => client.sessionState === "waiting" || client.sessionState === "stopped").length;
 
     return {
       online,
@@ -254,13 +255,13 @@ export default function Page() {
               {recentClients.length === 0 && <div className="nancy-empty-state">No live sessions are reporting yet.</div>}
               {recentClients.map((client) => (
                 <div key={cardKey(client)} className="nancy-activity-row">
-                  <span className="nancy-dot" style={{ backgroundColor: sessionLampColor(client.sessionStatus, client.status) }} />
+                  <span className="nancy-dot" style={{ backgroundColor: sessionLampColor(client.sessionState, client.status) }} />
                   <div className="nancy-activity-copy">
                     <div className="nancy-activity-title">{displayTitle(client)}</div>
                     <div className="nancy-activity-meta">{workspaceLabel(client.workspace)} · {shortRuntimeLabel(client.runtimeID)}</div>
                   </div>
                   <div className="nancy-activity-side">
-                    <span className={`nancy-inline-pill ${statusClass(client.sessionStatus || client.status)}`}>{client.sessionStatus || client.status}</span>
+                    <span className={`nancy-inline-pill ${statusClass(sessionBucket(client.sessionState) || client.status)}`}>{sessionStatusLabel(client.sessionState, client.sessionReason)}</span>
                     <span className="nancy-activity-time">{formatRelativeTime(client.lastActiveTime)}</span>
                   </div>
                 </div>
@@ -306,8 +307,8 @@ export default function Page() {
             {runtimeSummaries.length === 0 && <div className="nancy-empty-state">No runtimes connected.</div>}
             {runtimeSummaries.map((runtime) => {
               const busiest = [...runtime.clients].sort(compareActivity)[0] || null;
-              const busyCount = runtime.clients.filter((client) => client.sessionStatus === "busy").length;
-              const errorCount = runtime.clients.filter((client) => client.sessionStatus === "error").length;
+              const busyCount = runtime.clients.filter((client) => client.sessionState === "busy").length;
+              const errorCount = runtime.clients.filter((client) => client.sessionState === "waiting" || client.sessionState === "stopped").length;
 
               return (
                 <article key={runtime.runtimeID} className="nancy-runtime-card">
@@ -385,8 +386,8 @@ export default function Page() {
             {registryClients.map((client) => (
               <div key={cardKey(client)} className="nancy-tr nancy-tr-session">
                 <span className="nancy-state-cell">
-                  <span className="nancy-dot" style={{ backgroundColor: sessionLampColor(client.sessionStatus, client.status) }} />
-                  <span className={`nancy-inline-pill ${statusClass(client.sessionStatus || client.status)}`}>{client.sessionStatus || client.status}</span>
+                  <span className="nancy-dot" style={{ backgroundColor: sessionLampColor(client.sessionState, client.status) }} />
+                  <span className={`nancy-inline-pill ${statusClass(sessionBucket(client.sessionState) || client.status)}`}>{sessionStatusLabel(client.sessionState, client.sessionReason)}</span>
                 </span>
                 <span>{displayTitle(client)}{client.synthetic ? " · template" : ""}</span>
                 <span className="nancy-mono">{client.sessionID ?? "null"}</span>

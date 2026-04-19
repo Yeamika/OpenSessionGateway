@@ -1,6 +1,6 @@
 {
   "name": "@opensessiongateway/client-library",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "description": "Unified OSGClient with logger and WebSocket support",
   "type": "module",
   "main": "dist/index.js",
@@ -21,7 +21,7 @@
     "typescript": "^5.8.2"
   },
   "dependencies": {
-    "@opensessiongateway/protocol-library": "0.0.3"
+    "@opensessiongateway/protocol-library": "0.0.5"
   },
   "license": "MIT"
 }
