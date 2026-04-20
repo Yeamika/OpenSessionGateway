@@ -5,17 +5,14 @@ export type {
   ClientSessionMeta,
   ClientSessionReason,
   ClientSessionState,
-  ClientSessionStatus,
 } from "./ws-protocol/ClientContentExecuteing.js";
 export {
   CLIENT_CONTENT_EXECUTEING_EVENT,
   createClientContentExecuteingEnvelope,
   createClientContentExecuteingPayload,
-  legacySessionStatusFromState,
   normalizeClientSessionMeta,
   normalizeClientSessionReason,
   normalizeClientSessionState,
-  normalizeClientSessionStatus,
   readClientContentExecuteingPayload,
 } from "./ws-protocol/ClientContentExecuteing.js";
 export type {

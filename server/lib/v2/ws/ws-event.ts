@@ -5,7 +5,6 @@ import { ensureRuntimeInstanceWorkspaceBundle } from "@/lib/runtime-hub";
 import { ensureRuntimeSessionBundle } from "@/lib/ClientModel/session/registry";
 import {
   CLIENT_CONTENT_EXECUTEING_EVENT,
-  legacySessionStatusFromState,
   PERMISSION_ASKED_EVENT,
   PERMISSION_UPDATED_EVENT,
   QUESTION_ASKED_EVENT,
@@ -52,7 +51,6 @@ export async function handleWsEvent(
     const instanceWorkspaceDirectory = content.instanceWorkspaceDirectory || ""
     const sessionID = content.session?.sessionID || ""
     const title = content.session?.title || ""
-    const status = content.session?.status || legacySessionStatusFromState(content.session?.state) || ""
 
     if (instanceWorkspaceDirectory)
       ensureRuntimeInstanceWorkspaceBundle(
@@ -67,7 +65,6 @@ export async function handleWsEvent(
       bundle.activeCount += 1
       bundle.displayID = content.displayID || null
       bundle.title = title || null
-      bundle.status = status === "idle" || status === "busy" || status === "error" ? status : null
       bundle.state = content.session?.state || null
       bundle.reason = content.session?.reason || null
       bundle.meta = content.session?.meta || null
@@ -75,7 +72,7 @@ export async function handleWsEvent(
     const display = content.displayID ? ensureRuntimeDisplayBundle(queue.runtimeID, content.displayID) : null
     const sessionText = bundle?.sessionID || sessionID || "-"
     const titleText = sessionText === "-" ? "-" : title || "-"
-    const statusText = sessionText === "-" ? "-" : [content.session?.state || status || "-", content.session?.reason || "-"].join(":")
+    const statusText = sessionText === "-" ? "-" : [content.session?.state || "-", content.session?.reason || "-"].join(":")
     const meta = content.session?.meta && typeof content.session.meta === "object" ? content.session.meta as Record<string, unknown> : {}
     console.log(
       `[client content] runtime=${queue.runtimeID} display=${content.displayID || "-"} instanceWorkspace=${instanceWorkspaceDirectory || "-"} session=${sessionText} title=${field(titleText)} status=${statusText} subtitle=${field(meta.subtitle)} context=${field(meta.context)}`,
@@ -88,7 +85,6 @@ export async function handleWsEvent(
         instanceWorkspaceDirectory,
         sessionID: bundle?.sessionID || sessionID,
         title,
-        status,
         state: content.session?.state || null,
         reason: content.session?.reason || null,
         meta: content.session?.meta || null,

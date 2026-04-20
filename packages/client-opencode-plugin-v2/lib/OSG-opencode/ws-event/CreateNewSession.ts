@@ -49,11 +49,11 @@ export async function handleCreateNewSession(
   const req = createNewSessionRequest(payload);
   if (!req.instanceWorkspaceDirectory) return { ok: false, sessionID: "", content: req.content, error: "instanceWorkspaceDirectory is required" };
   if (!req.content.trim()) {
-    return { ok: false, sessionID: "", content: req.content, title: req.title, model: req.model, displayID: req.displayID, error: "content is required" };
+    return { ok: false, sessionID: "", content: req.content, title: req.title, model: req.model, error: "content is required" };
   }
   const model = req.model ? readModel(req.model) : undefined
   if (req.model && !model) {
-    return { ok: false, sessionID: "", content: req.content, title: req.title, model: req.model, displayID: req.displayID, error: "model must be provider/model" }
+    return { ok: false, sessionID: "", content: req.content, title: req.title, model: req.model, error: "model must be provider/model" }
   }
 
   const created = await ctx?.client?.session?.create?.({
@@ -66,13 +66,12 @@ export async function handleCreateNewSession(
   if (!sessionID) {
     return {
       ok: false,
-      sessionID: "",
-      content: req.content,
-      title: req.title,
-      model: req.model,
-      displayID: req.displayID,
-      error: "create session failed",
-    }
+        sessionID: "",
+        content: req.content,
+        title: req.title,
+        model: req.model,
+        error: "create session failed",
+      }
   }
 
   const prompted = await ctx?.client?.session?.promptAsync?.({
@@ -90,7 +89,6 @@ export async function handleCreateNewSession(
       content: req.content,
       title: req.title,
       model: req.model,
-      displayID: req.displayID,
       session: readSession(session),
       error: "submit initial content failed",
     }
@@ -104,7 +102,6 @@ export async function handleCreateNewSession(
       content: req.content,
       title: req.title,
       model: req.model,
-      displayID: req.displayID,
       session: readSession(session),
       error: execution.error || "session did not start executing",
     }
@@ -116,7 +113,6 @@ export async function handleCreateNewSession(
     content: req.content,
     title: req.title,
     model: req.model,
-    displayID: req.displayID,
     session: readSession(session),
   }
 }

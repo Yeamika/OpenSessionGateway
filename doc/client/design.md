@@ -122,3 +122,10 @@
 - 客户端维护真实 runtime、session、permission、question 状态。
 - OSG 不接管这些状态机。
 - OSG 只通过公开 API 和 WebSocket 链路进行观测与控制。
+
+## 9.通讯分层约束
+
+- `c-s`：客户端与服务端之间的运行时链路。
+- `s-MCP`：服务端对外暴露的 MCP 控制入口。
+- 客户端只处理 `c-s` 所需的最小执行参数。
+- 例如 `ExecutorSessionID` 这种控制层参数，只应存在于 `s-MCP`，不应进入客户端 ws 执行协议。

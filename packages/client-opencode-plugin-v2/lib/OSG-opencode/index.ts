@@ -13,7 +13,6 @@ import { refreshSessionTitle } from "./runtime/refresh-session-title.js";
 import { resolveInstanceWorkspaceInfo } from "./runtime/instance-workspace-info.js";
 import { OsgManager, type WriteLog } from "./manager.js";
 import {
-  legacySessionStatusFromState,
   type ClientSessionMeta,
   type ClientSessionReason,
   type ClientSessionState,
@@ -595,14 +594,13 @@ export class OSGOpencodeClient {
     this.setReasoning(cleanSessionID, cleanPartID, textValue);
   }
 
-  private sessionPayload(sessionID?: string, title?: string, status?: "idle" | "busy" | "error") {
+  private sessionPayload(sessionID?: string, title?: string) {
     const clean = text(sessionID);
     if (!clean) return undefined;
     const hit = this.getSessionState(clean);
     return {
       sessionID: clean,
       title: text(title) || undefined,
-      status: legacySessionStatusFromState(hit?.state, status),
       state: hit?.state || null,
       reason: hit?.reason || null,
       meta: hit?.meta || null,
@@ -789,7 +787,6 @@ export class OSGOpencodeClient {
           ? {
               sessionID: nextSessionID,
               title: nextTitle,
-              status: this.sessionStatus(nextSessionID, type, this.currentClientInfo.status),
             }
           : undefined,
       })
@@ -816,7 +813,6 @@ export class OSGOpencodeClient {
           session: {
             sessionID: nextSessionID,
             title: nextTitle,
-            status: this.sessionStatus(nextSessionID, type, this.currentClientInfo.status),
           },
           instanceWorkspaceDirectory: nextCwd || undefined,
         })
@@ -941,14 +937,13 @@ export class OSGOpencodeClient {
     session?: {
       sessionID?: string
       title?: string
-      status?: "idle" | "busy" | "error"
       state?: ClientSessionState | null
       reason?: ClientSessionReason | null
       meta?: ClientSessionMeta | null
     }
   } = {}, force = false) {
     const session = input.session?.sessionID
-      ? this.sessionPayload(input.session.sessionID, input.session.title, input.session.status)
+      ? this.sessionPayload(input.session.sessionID, input.session.title)
       : undefined
     const payload = createClientContentExecuteing({
       displayID: input.displayID,
@@ -977,21 +972,6 @@ export class OSGOpencodeClient {
 
   async RequestInstanceWorkspaceReload(payload?: { instanceWorkspaceDirectory?: string; title?: string }): Promise<Record<string, unknown>> {
     return requestInstanceWorkspaceReload(this.ctx, payload);
-  }
-
-  private sessionStatus(sessionID: string, type: string, current: string): "idle" | "busy" | "error" {
-    const status = legacySessionStatusFromState(this.getSessionState(sessionID)?.state);
-    if (status) return status;
-    if (type === "session.idle") return "idle"
-    if (type === "session.error" || type === "permission.asked" || type === "question.asked") return "error"
-    if (type === "session.status") {
-      if (current === "Idle") return "idle"
-      if (current === "Interrupted") return "error"
-      return "busy"
-    }
-    if (current === "Idle") return "idle"
-    if (current === "Interrupted") return "error"
-    return "busy"
   }
 
   async start() {

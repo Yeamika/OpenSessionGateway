@@ -1,6 +1,6 @@
 import type { WebSocket } from "ws";
 
-import type { ClientSessionMeta, ClientSessionReason, ClientSessionState, ClientSessionStatus } from "@opensessiongateway/protocol-library";
+import type { ClientSessionMeta, ClientSessionReason, ClientSessionState } from "@opensessiongateway/protocol-library";
 
 export type RuntimeStatus = "online" | "offline";
 
@@ -49,7 +49,6 @@ export type RuntimeClientView = {
   instanceWorkspaceDirectory: string | null;
   title: string | null;
   status: RuntimeStatus;
-  sessionStatus: ClientSessionStatus | null;
   sessionState: ClientSessionState | null;
   sessionReason: ClientSessionReason | null;
   sessionMeta: ClientSessionMeta | null;

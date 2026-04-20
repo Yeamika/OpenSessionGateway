@@ -3,7 +3,6 @@ export type CreateNewSessionRequest = {
   content: string;
   title?: string;
   model?: string;
-  displayID?: string;
 };
 
 export type CreateNewSessionResponse = {
@@ -12,7 +11,6 @@ export type CreateNewSessionResponse = {
   content: string;
   title?: string;
   model?: string;
-  displayID?: string;
   session?: {
     id: string;
     projectID?: string;
@@ -62,14 +60,12 @@ export function createNewSessionRequest(input: {
   content?: string;
   title?: string;
   model?: string;
-  displayID?: string;
 }): CreateNewSessionRequest {
   return {
     instanceWorkspaceDirectory: text(input.instanceWorkspaceDirectory),
     content: typeof input.content === "string" ? input.content : "",
     title: text(input.title) || undefined,
     model: text(input.model) || undefined,
-    displayID: text(input.displayID) || undefined,
   };
 }
 
@@ -81,7 +77,6 @@ export function readCreateNewSessionResponse(raw: unknown): CreateNewSessionResp
     content: typeof src.content === "string" ? src.content : "",
     title: text(src.title) || undefined,
     model: text(src.model) || undefined,
-    displayID: text(src.displayID) || undefined,
     session: session(src.session),
     error: text(src.error) || text(src.message) || undefined,
   };

@@ -485,7 +485,9 @@ async function run() {
       });
 
       await step("CreateNewSession tool", async () => {
+        assert(initialSessionID, "missing initial sessionID for CreateNewSession test");
         const payload = await rpcToolCall(runtimeControlUrl, "CreateNewSession", {
+          ExecutorSessionID: initialSessionID,
           runtimeID,
           instanceWorkspaceDirectory: process.cwd(),
           content: "[template smoke] create new session",

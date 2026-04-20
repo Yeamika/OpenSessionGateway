@@ -7,7 +7,6 @@ export async function createNewSession(
     content?: string;
     title?: string;
     model?: string;
-    displayID?: string;
   },
 ): Promise<Record<string, unknown>> {
   return state.createNewSession(payload);

@@ -42,6 +42,12 @@ route segment：`runtime_control`
 - `GetRuntimePermission`
 - `ResolveRuntimePermission`
 
+说明：
+
+- `runtime-control` 属于 `s-MCP` 控制面。
+- 该层允许承载服务端归属与鉴权参数。
+- 这些参数不应默认透传到 `c-s` / ws / runtime 执行链路。
+
 ## 2.1 拟新增工具
 
 围绕 session 恢复与上下文维护，下一步准备新增：
@@ -71,6 +77,12 @@ route segment：`runtime_control`
 - `AbortClientSession`
 - `CompactSession`
 - `AddPrompt`
+
+`CreateNewSession` 约束：
+
+- `ExecutorSessionID` 属于 `s-MCP` 层参数。
+- 该参数用于服务端做执行归属与策略判断。
+- 下游客户端创建 session 的真实协议不应包含该字段。
 
 拟新增：
 

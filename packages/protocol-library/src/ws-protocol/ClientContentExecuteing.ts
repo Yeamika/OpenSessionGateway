@@ -11,7 +11,6 @@ function record(value: unknown): Record<string, unknown> | null {
 
 export const CLIENT_CONTENT_EXECUTEING_EVENT = "ClientContentExecuteing";
 
-export type ClientSessionStatus = "idle" | "busy" | "error";
 export type ClientSessionState = "idle" | "busy" | "waiting" | "stopped";
 export type ClientSessionReason =
   | "completed"
@@ -26,10 +25,6 @@ export type ClientSessionReason =
   | "error";
 
 export type ClientSessionMeta = Record<string, unknown>;
-
-export function normalizeClientSessionStatus(value: unknown): ClientSessionStatus | undefined {
-  return value === "idle" || value === "busy" || value === "error" ? value : undefined;
-}
 
 export function normalizeClientSessionState(value: unknown): ClientSessionState | undefined {
   return value === "idle" || value === "busy" || value === "waiting" || value === "stopped" ? value : undefined;
@@ -57,23 +52,12 @@ export function normalizeClientSessionMeta(value: unknown): ClientSessionMeta | 
   return record(value) || undefined;
 }
 
-export function legacySessionStatusFromState(
-  state?: ClientSessionState,
-  fallback?: ClientSessionStatus,
-): ClientSessionStatus | undefined {
-  if (state === "idle") return "idle";
-  if (state === "busy") return "busy";
-  if (state === "waiting" || state === "stopped") return "error";
-  return fallback;
-}
-
 export type ClientContentExecuteingPayload = {
   displayID?: string;
   instanceWorkspaceDirectory?: string;
   session?: {
     sessionID?: string;
     title?: string;
-    status?: ClientSessionStatus;
     state?: ClientSessionState;
     reason?: ClientSessionReason;
     meta?: ClientSessionMeta;
@@ -86,7 +70,6 @@ export function createClientContentExecuteingPayload(input: {
   session?: {
     sessionID?: string;
     title?: string;
-    status?: ClientSessionStatus;
     state?: ClientSessionState;
     reason?: ClientSessionReason;
     meta?: ClientSessionMeta;
@@ -95,14 +78,12 @@ export function createClientContentExecuteingPayload(input: {
   const sessionID = text(input.session?.sessionID);
   const title = text(input.session?.title);
   const state = normalizeClientSessionState(input.session?.state);
-  const status = legacySessionStatusFromState(state, normalizeClientSessionStatus(input.session?.status));
   const reason = normalizeClientSessionReason(input.session?.reason);
   const meta = normalizeClientSessionMeta(input.session?.meta);
-  const session = sessionID || title || status || state || reason || meta
+  const session = sessionID || title || state || reason || meta
     ? {
         sessionID: sessionID || undefined,
         title: title || undefined,
-        status,
         state,
         reason,
         meta,
@@ -125,7 +106,6 @@ export function readClientContentExecuteingPayload(raw: unknown): ClientContentE
     session: {
       sessionID: typeof session.sessionID === "string" ? session.sessionID : undefined,
       title: typeof session.title === "string" ? session.title : undefined,
-      status: normalizeClientSessionStatus(session.status),
       state: normalizeClientSessionState(session.state),
       reason: normalizeClientSessionReason(session.reason),
       meta: normalizeClientSessionMeta(session.meta),

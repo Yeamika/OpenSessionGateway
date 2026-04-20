@@ -14,7 +14,6 @@ export function createClientContentExecuteing(
     session?: {
       sessionID?: string
       title?: string
-      status?: "idle" | "busy" | "error"
       state?: ClientSessionState | null
       reason?: ClientSessionReason | null
       meta?: ClientSessionMeta | null

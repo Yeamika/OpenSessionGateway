@@ -9,7 +9,9 @@ export function useMonitorStream() {
   const [connected, setConnected] = useState(false);
 
   useEffect(() => {
-    const eventSource = new EventSource("/api/monitor/stream");
+    const origin = process.env.NEXT_PUBLIC_OSG_GATEWAY_ORIGIN?.trim();
+    const stream = origin ? `${origin.replace(/\/$/, "")}/api/monitor/stream` : "/api/monitor/stream";
+    const eventSource = new EventSource(stream);
     eventSource.onopen = () => setConnected(true);
     eventSource.onerror = () => setConnected(false);
     eventSource.onmessage = (event) => {

@@ -386,7 +386,6 @@ export function createTemplateRuntimeState(input: RuntimeStateInput) {
       content?: string;
       title?: string;
       model?: string;
-      displayID?: string;
     }) {
       const req = createNewSessionRequest(payload || {});
       if (!req.instanceWorkspaceDirectory) {
@@ -399,7 +398,6 @@ export function createTemplateRuntimeState(input: RuntimeStateInput) {
           content: req.content,
           title: req.title,
           model: req.model,
-          displayID: req.displayID,
           error: "content is required",
         };
       }
@@ -407,13 +405,12 @@ export function createTemplateRuntimeState(input: RuntimeStateInput) {
       const session = createSession({
         directory: req.instanceWorkspaceDirectory,
         title: req.title || `Template Session ${sessions.size + 1}`,
-        displayID: req.displayID || currentDisplayID,
+        displayID: currentDisplayID,
         model: req.model,
         initialContent: req.content,
       });
       sessions.set(session.id, session);
       currentSessionID = session.id;
-      currentDisplayID = req.displayID || currentDisplayID;
       cwd = session.instanceWorkspaceDirectory;
 
       return {
@@ -422,7 +419,6 @@ export function createTemplateRuntimeState(input: RuntimeStateInput) {
         content: req.content,
         title: session.title,
         model: req.model,
-        displayID: req.displayID || undefined,
         session: {
           id: session.id,
           title: session.title,

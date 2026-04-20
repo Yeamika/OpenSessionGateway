@@ -28,6 +28,13 @@
 - `packages/client-opencode-plugin-v2/lib/config.ts`
 - `packages/client-opencode-plugin-v2/lib/mcp.ts`
 - `packages/client-opencode-plugin-v2/lib/OSG-opencode/manager.ts`
+
+说明：
+
+- 当前实际链路分为两层：
+  - `c-s`：客户端与服务端之间的运行时链路。
+  - `s-MCP`：服务端对外暴露的 MCP surface。
+- `s-MCP` 上的控制参数不应默认透传到 `c-s`。
 - `packages/client-opencode-plugin-v2/lib/OSG-opencode/index.ts`
 
 ### 1.3 服务端插件
@@ -216,3 +223,10 @@
 
 - OpenCode 自身已经有独立状态机。
 - OSG 侧的设计目标是提供统一控制面，而不是接管这些状态机。
+
+## 7.参数分层规则
+
+- `c-s` 只传客户端执行命令所必需的最小参数。
+- `s-MCP` 可以承载服务端控制面参数，例如执行归属、认证和策略上下文。
+- 这类控制层参数应由服务端消费，不应无条件透传到客户端协议。
+- 例如 `CreateNewSession.ExecutorSessionID` 只属于 `runtime_control` 这一层，不属于下游 ws 创建 session 协议。
