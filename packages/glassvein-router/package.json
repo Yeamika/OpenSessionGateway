@@ -1,0 +1,21 @@
+{
+  "name": "glassvein-router",
+  "version": "0.1.0",
+  "description": "Session-envelope forwarding router for OSG-style runtimes.",
+  "license": "MIT",
+  "bin": {
+    "glassvein-router": "./bin/glassvein-router.js"
+  },
+  "files": [
+    "bin/",
+    "dist/",
+    "README.md"
+  ],
+  "scripts": {
+    "build:rust": "cargo build --manifest-path ../../Cargo.toml --release -p glassvein-router-cli",
+    "pack:local": "npm pack"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

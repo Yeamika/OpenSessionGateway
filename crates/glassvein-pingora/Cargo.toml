@@ -1,0 +1,12 @@
+[package]
+name = "glassvein-pingora"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+async-trait.workspace = true
+pingora-core.workspace = true
+pingora-load-balancing.workspace = true
+pingora-proxy.workspace = true

@@ -1,0 +1,179 @@
+name: build-glassvein-router
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Optional npm package version override
+        required: false
+        type: string
+      publish:
+        description: Publish the packed npm package after building all binaries
+        required: false
+        default: false
+        type: boolean
+      registry:
+        description: Optional npm registry override
+        required: false
+        type: string
+  push:
+    paths:
+      - .github/workflows/build-glassvein-router.yml
+      - Cargo.toml
+      - Cargo.lock
+      - crates/glassvein-protocol/**
+      - crates/glassvein-core/**
+      - crates/glassvein-router/**
+      - crates/glassvein-router-cli/**
+      - packages/glassvein-router/**
+  pull_request:
+    paths:
+      - .github/workflows/build-glassvein-router.yml
+      - Cargo.toml
+      - Cargo.lock
+      - crates/glassvein-protocol/**
+      - crates/glassvein-core/**
+      - crates/glassvein-router/**
+      - crates/glassvein-router-cli/**
+      - packages/glassvein-router/**
+
+concurrency: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: build ${{ matrix.npm_target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2022
+            rust_target: x86_64-pc-windows-msvc
+            npm_target: win32-x64
+            binary_name: glassvein-router.exe
+          - os: ubuntu-24.04
+            rust_target: x86_64-unknown-linux-gnu
+            npm_target: linux-x64
+            binary_name: glassvein-router
+          - os: ubuntu-24.04
+            rust_target: aarch64-unknown-linux-gnu
+            npm_target: linux-arm64
+            binary_name: glassvein-router
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_target }}
+
+      - name: Install Linux arm64 cross linker
+        if: matrix.rust_target == 'aarch64-unknown-linux-gnu'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+          echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> "$GITHUB_ENV"
+
+      - name: Build router binary
+        run: cargo build --release --target ${{ matrix.rust_target }} -p glassvein-router-cli
+
+      - name: Collect binary artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          out_dir="$RUNNER_TEMP/artifact/${{ matrix.npm_target }}"
+          mkdir -p "$out_dir"
+          cp "target/${{ matrix.rust_target }}/release/${{ matrix.binary_name }}" "$out_dir/${{ matrix.binary_name }}"
+          if [[ "${{ runner.os }}" != "Windows" ]]; then
+            chmod +x "$out_dir/${{ matrix.binary_name }}"
+          fi
+
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: glassvein-router-${{ matrix.npm_target }}
+          path: ${{ runner.temp }}/artifact/${{ matrix.npm_target }}
+          if-no-files-found: error
+
+  package:
+    name: package npm tarball
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Download binary artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ${{ runner.temp }}/glassvein-router-artifacts
+
+      - name: Assemble npm package dist
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p \
+            packages/glassvein-router/dist/win32-x64 \
+            packages/glassvein-router/dist/linux-x64 \
+            packages/glassvein-router/dist/linux-arm64
+          cp "$RUNNER_TEMP/glassvein-router-artifacts/glassvein-router-win32-x64/glassvein-router.exe" \
+            packages/glassvein-router/dist/win32-x64/glassvein-router.exe
+          cp "$RUNNER_TEMP/glassvein-router-artifacts/glassvein-router-linux-x64/glassvein-router" \
+            packages/glassvein-router/dist/linux-x64/glassvein-router
+          cp "$RUNNER_TEMP/glassvein-router-artifacts/glassvein-router-linux-arm64/glassvein-router" \
+            packages/glassvein-router/dist/linux-arm64/glassvein-router
+          chmod +x packages/glassvein-router/dist/linux-x64/glassvein-router
+          chmod +x packages/glassvein-router/dist/linux-arm64/glassvein-router
+
+      - name: Apply npm version override
+        if: github.event_name == 'workflow_dispatch' && inputs.version != ''
+        run: npm version --prefix packages/glassvein-router --no-git-tag-version "${{ inputs.version }}"
+
+      - name: Pack npm package
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/glassvein-router-npm"
+          npm pack ./packages/glassvein-router --pack-destination "$RUNNER_TEMP/glassvein-router-npm"
+
+      - name: Upload npm package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: glassvein-router-npm
+          path: ${{ runner.temp }}/glassvein-router-npm/*.tgz
+          if-no-files-found: error
+
+      - name: Publish npm package
+        if: github.event_name == 'workflow_dispatch' && inputs.publish
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          INPUT_REGISTRY: ${{ inputs.registry }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${NPM_TOKEN:-}" ]; then
+            echo "NPM_TOKEN secret is required when publish=true" >&2
+            exit 1
+          fi
+          REGISTRY="${INPUT_REGISTRY:-}"
+          if [ -z "$REGISTRY" ]; then
+            REGISTRY="https://registry.npmjs.org/"
+          fi
+          HOST="${REGISTRY#http://}"
+          HOST="${HOST#https://}"
+          HOST="${HOST%/}"
+          {
+            echo "registry=${REGISTRY}"
+            echo "//${HOST}/:_authToken=${NPM_TOKEN}"
+          } > "$RUNNER_TEMP/npmrc"
+          export NPM_CONFIG_USERCONFIG="$RUNNER_TEMP/npmrc"
+          npm publish "$RUNNER_TEMP"/glassvein-router-npm/*.tgz --registry "$REGISTRY"
