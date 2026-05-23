@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GlassVein Session Endpoint</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header>
+    <div><p>GlassVein endpoint</p><h1>Session Endpoint Web</h1></div>
+    <strong id="status">disconnected</strong>
+  </header>
+  <main>
+    <section class="card wide">
+      <h2>GV Connection</h2>
+      <div class="grid">
+        <label>Router URL<input id="routerUrl" value="ws://127.0.0.1:7200"></label>
+        <label>Node ID<input id="nodeId" value="session-endpoint"></label>
+        <label>Source domain<input id="sourceDomain" value="surface"></label>
+        <label>Source runtime<input id="sourceRuntime" value="session-endpoint"></label>
+        <label>Source session<input id="sourceSession" placeholder="optional"></label>
+        <label>Target domain<input id="targetDomain" value="domain-a"></label>
+        <label>Target runtime<input id="targetRuntime" value="runtime-alpha"></label>
+        <label>Target session<input id="targetSession" placeholder="optional"></label>
+      </div>
+      <button id="connect">Connect GV</button>
+      <button id="disconnect" class="secondary">Disconnect</button>
+      <p id="error"></p>
+    </section>
+
+    <section class="card">
+      <h2>Requests</h2>
+      <label>Message limit<input id="limit" type="number" value="50" min="1" max="500"></label>
+      <button data-request="runtime_session_view_snapshot">View snapshot</button>
+      <button data-request="runtime_session_messages">Messages</button>
+    </section>
+
+    <section class="card">
+      <h2>Controls</h2>
+      <label>Prompt<textarea id="prompt" rows="4"></textarea></label>
+      <label>Title<input id="title" placeholder="rename/create title"></label>
+      <button data-control="add_prompt">Add prompt</button>
+      <button data-control="abort_session" class="danger">Abort</button>
+      <button data-control="compact_session">Compact</button>
+      <button data-control="create_session">Create</button>
+      <button data-control="rename_session">Rename</button>
+      <button data-control="resume_session">Resume</button>
+    </section>
+
+    <section class="card"><h2>Session Summary</h2><pre id="summary">{}</pre></section>
+    <section class="card wide"><h2>Updates</h2><ol id="updates"></ol></section>
+    <section class="card wide"><h2>Log / Responses</h2><ol id="logs"></ol></section>
+  </main>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

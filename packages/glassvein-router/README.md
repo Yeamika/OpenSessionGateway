@@ -7,7 +7,7 @@ GlassVein is only a session-envelope forwarding layer: it accepts router/client/
 ## Install
 
 ```bash
-npm install -g glassvein-router
+npm install -g @opensessiongateway/glassvein-router
 ```
 
 ## Run
@@ -57,3 +57,33 @@ Only these three targets are packaged:
 - `linux-arm64`
 
 Set `GLASSVEIN_ROUTER_BINARY=/path/to/glassvein-router` to override the bundled binary during local testing.
+
+## Dist staging & npm pack
+
+The npm package ships platform-specific pre-built binaries under `dist/`. To stage a locally-built binary:
+
+```bash
+# 1. Build the Rust binary (from GlassVein root)
+cargo build --release -p glassvein-router-cli
+
+# 2. Stage it into dist/linux-x64/ (default target)
+cd packages/glassvein-router
+npm run stage:local
+# Or: ./scripts/stage-local.sh
+# Cross-arch example: TARGET=linux-arm64 ./scripts/stage-local.sh
+
+# 3. Verify npm pack includes everything
+npm pack --dry-run
+```
+
+`npm pack --dry-run` should list:
+
+- `bin/` — the Node.js launcher
+- `dist/linux-x64/glassvein-router` — the staged binary
+- `README.md` and `package.json`
+
+To override the source binary path, set `GLASSVEIN_ROUTER_BINARY`:
+
+```bash
+GLASSVEIN_ROUTER_BINARY=../../target/release/glassvein-router node bin/glassvein-router.js --help
+```

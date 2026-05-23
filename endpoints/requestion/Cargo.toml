@@ -1,0 +1,18 @@
+[package]
+name = "requestion-endpoint"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Requestion cache/snapshot endpoint for GlassVein"
+
+[dependencies]
+anyhow.workspace = true
+futures-util.workspace = true
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+osgp.workspace = true
+tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread", "sync", "net", "io-util"] }
+tokio-tungstenite.workspace = true
+tracing.workspace = true
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+uuid.workspace = true

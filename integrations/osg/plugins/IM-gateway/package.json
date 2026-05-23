@@ -1,0 +1,25 @@
+{
+  "name": "@opensessiongateway/osg-plugin-im-gateway",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json --pretty false",
+    "typecheck": "tsc -p tsconfig.json --noEmit --pretty false",
+    "probe": "tsx probe.ts"
+  },
+  "dependencies": {
+    "@koishijs/core": "^4.18.11",
+    "@koishijs/plugin-adapter-lark": "^3.12.4",
+    "@larksuiteoapi/node-sdk": "^1.60.0",
+    "@opensessiongateway/server-plugin-sdk": "0.0.5",
+    "koishi": "^4.18.11"
+  },
+  "devDependencies": {
+    "tsx": "^4.20.5",
+    "typescript": "^5.8.2"
+  },
+  "osgServerPlugin": {
+    "entry": "./index.ts"
+  }
+}

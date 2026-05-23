@@ -1,6 +1,6 @@
 {
-  "name": "glassvein-router",
-  "version": "0.1.0",
+  "name": "@opensessiongateway/glassvein-router",
+  "version": "0.2.0",
   "description": "Session-envelope forwarding router for OSG-style runtimes.",
   "license": "MIT",
   "bin": {
@@ -12,7 +12,8 @@
     "README.md"
   ],
   "scripts": {
-    "build:rust": "cargo build --manifest-path ../../Cargo.toml --release -p glassvein-router-cli",
+    "build:rust": "cargo build --manifest-path ../../Cargo.toml --release -p router",
+    "stage:local": "./scripts/stage-local.sh",
     "pack:local": "npm pack"
   },
   "engines": {

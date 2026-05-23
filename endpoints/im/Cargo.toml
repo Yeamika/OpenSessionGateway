@@ -1,0 +1,18 @@
+[package]
+name = "im-endpoint"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "GlassVein IM endpoint with MCP-compatible API, GV WebSocket adapter, and web frontend"
+
+[dependencies]
+anyhow.workspace = true
+futures-util.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+osgp.workspace = true
+tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread", "net", "io-util", "sync", "time"] }
+tokio-tungstenite.workspace = true
+tracing.workspace = true
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }

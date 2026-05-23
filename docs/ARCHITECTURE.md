@@ -1,3 +1,4 @@
+<!-- canonical: GlassVein routing architecture overview -->
 # GlassVein Architecture Spike
 
 GlassVein core should own routing decisions, not session business semantics.
@@ -32,7 +33,7 @@ The base demos intentionally use plain WebSocket + JSON to match current OSG tec
 
 Pingora integration:
 
-- `crates/glassvein-pingora/` provides a Pingora ingress adapter.
+- `core/src/transport/pingora.rs` provides a Pingora ingress adapter (feature-gated behind `pingora-transport`).
 - The adapter uses Pingora `LoadBalancer<RoundRobin>` to select an upstream GlassVein router listener for each incoming HTTP/WebSocket connection.
-- `examples/pingora-surface-demo/` routes every client, surface, and router-upstream connection through Pingora ingress ports.
 - Pingora is the connection/data-plane router; GlassVein remains the application-level route resolver for `domain/runtime/session` addresses.
+- Legacy Pingora stub (`legacy/crates/glassvein-pingora/`) retained for reference only; pingora-core 0.4.0 does not compile on the current toolchain.

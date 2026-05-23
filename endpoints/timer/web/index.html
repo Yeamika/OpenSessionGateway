@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>GlassVein Timer Endpoint</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="hero">
+      <div>
+        <p class="eyebrow">GlassVein Endpoint</p>
+        <h1>Timer</h1>
+        <p>MCP/API, GV WebSocket adapter, and web controls in one endpoint project.</p>
+      </div>
+      <button id="refreshButton" type="button">Refresh</button>
+    </header>
+
+    <main class="layout">
+      <section class="card">
+        <h2>Runtime/session</h2>
+        <form id="configForm" class="grid-form">
+          <label>Runtime ID <input name="runtimeID" required /></label>
+          <label>Session ID <input name="sessionID" required /></label>
+          <label class="inline"><input name="listAll" type="checkbox" /> List all timers</label>
+          <button type="submit">Save</button>
+        </form>
+      </section>
+
+      <section class="card">
+        <h2>Create timer</h2>
+        <form id="timerForm" class="grid-form">
+          <label>Type
+            <select name="timerType">
+              <option value="one_shot">One-shot</option>
+              <option value="periodic">Periodic</option>
+              <option value="cron">Cron placeholder</option>
+            </select>
+          </label>
+          <label>Title <input name="title" placeholder="timer task" /></label>
+          <label class="wide">Message <textarea name="msg" rows="4" required></textarea></label>
+          <label>After seconds <input name="afterSeconds" type="number" min="1" value="60" /></label>
+          <label>Every seconds <input name="everySeconds" type="number" min="1" value="300" /></label>
+          <label>Cron expression <input name="cronExpr" placeholder="*/15 * * * *" /></label>
+          <button type="submit">Create</button>
+        </form>
+      </section>
+
+      <section class="card wide-card">
+        <div class="section-header">
+          <h2>Timers</h2>
+          <p id="statusText" class="status">Loading…</p>
+        </div>
+        <div id="errorBox" class="error" hidden></div>
+        <div id="timerList" class="timer-list"></div>
+      </section>
+
+      <section class="card wide-card">
+        <h2>Last OSGP envelope</h2>
+        <pre id="wirePreview">No request yet.</pre>
+      </section>
+    </main>
+    <script type="module" src="/src/app.js"></script>
+  </body>
+</html>

@@ -1,3 +1,15 @@
-/target/
+**/target/
 /vendor/pingora/
 **/*.log
+
+# Node.js artifacts
+node_modules/
+dist/
+package-lock.json
+
+# Temp working directory
+.tmp/
+
+# Local IM endpoint secrets/config
+endpoints/im/config.local.json
+endpoints/im/*.local.json

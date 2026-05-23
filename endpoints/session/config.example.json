@@ -1,0 +1,22 @@
+{
+  "listen": "127.0.0.1:7310",
+  "router_url": "ws://127.0.0.1:7200",
+  "node_id": "session-endpoint-example",
+  "source": {
+    "domain": "surface",
+    "runtime": "session-endpoint-example",
+    "session": "optional-executor-session"
+  },
+  "target": {
+    "domain": "domain-a",
+    "runtime": "target-runtime-placeholder",
+    "session": "target-session-placeholder"
+  },
+  "executor": {
+    "runtime_id": "executor-runtime-placeholder",
+    "session_id": "executor-session-placeholder"
+  },
+  "web_defaults": {
+    "messageLimit": 50
+  }
+}

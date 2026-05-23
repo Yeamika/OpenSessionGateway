@@ -3,26 +3,111 @@
 ## 作用范围
 
 - 适用于 `GlassVein/` 及其子目录。
-- GlassVein 是独立的新项目目录，用于实验和沉淀 OSG 风格的分层会话路由核心。
+- GlassVein 是独立 Rust/Cargo workspace，用于 OSGP (OpenSessionGateway Protocol) 路由架构。
+- 新架构可完全脱离旧 OSG，不要求兼容旧 OSG 内部实现。
 
-## 当前定位
+## 当前目录结构（canonical）
 
-- `crates/glassvein-protocol/`：路由地址、信封与线协议类型。
-- `crates/glassvein-core/`：路由表、next-hop 与转发决策核心。
-- `crates/glassvein-router/`：WebSocket 路由节点与 demo 客户端运行时。
-- `crates/glassvein-router-cli/`：正式 `glassvein-router` CLI binary，用于 npm 二进制包分发。
-- `crates/glassvein-pingora/`：Pingora ingress/data-plane 适配层。
-- `examples/tree-demo/`：三节点树状网络互通 demo。
-- `examples/surface-demo/`：多 client / surface 的树内最短路径 demo。
-- `examples/pingora-surface-demo/`：所有接入先经过 Pingora ingress 的树内最短路径 demo。
-- `examples/multi-upstream-demo/`：验证单个 router 同时连接两个 upstream，并服务多个 downstream。
-- `packages/glassvein-router/`：npm wrapper 包，包名 `glassvein-router`，只打包 `win32-x64`、`linux-x64`、`linux-arm64` 三个目标二进制。
-- `vendor/pingora/`：本地克隆的 Pingora 评估副本，默认不纳入 GlassVein 源码版本控制。
+### OSGP 协议层
+
+```text
+osgp/rust/   → package `osgp` — Rust OSGP protocol crate
+osgp/ts/     → @opensessiongateway/osgp — TypeScript OSGP types
+```
+
+- `osgp/rust/`：OSGP 地址、信封、link/wire message primitives；不依赖其他 workspace crate。
+- `osgp/ts/`：TypeScript OSGP 类型与编解码；独立 npm 包。
+
+### Rust 客户端 SDK
+
+```text
+clients/rust/ → package `osgp-client`
+```
+
+- 依赖 `osgp`。
+- 模块结构：`transport`、`ws_transport`、`client`、`helpers`、`route`（含 `transport`、`local_route`）。
+
+### Rust 核心链
+
+```text
+core/   → core crate（纯路由表、TTL/trace、next-hop/forward decision）
+router/ → router crate（router runtime、邻居编排、连接管理）
+```
+
+- `core/`：只依赖 `osgp`，不包含 transport 实现或业务语义。
+- `router/`：依赖 `osgp`、`core`，不依赖 client/surface 业务。
+
+### Rust 端点（endpoints）
+
+```text
+endpoints/control/    → control-endpoint
+endpoints/viewer/     → surface-viewer
+endpoints/requestion/ → requestion-endpoint
+```
+
+### Rust Surface 库
+
+```text
+crates/surface/ → surface 库（observer + control + query）
+```
+
+### 已归档
+
+- `crates/glassvein-opencode-router/` — 已移除，功能由 `integrations/opencode/plugin` 取代。
+- `crates/control-surface/`、`crates/observer-surface/`、`crates/requestion-surface/` — 已迁移到 `endpoints/`。
+
+### 集成层（integrations）
+
+```text
+integrations/opencode/plugin/ → @opensessiongateway/opencode-vein-plugin（TypeScript 插件）
+integrations/osg/plugins/     → OSG MCP 插件（runtime-control、session-bridge、timer-scheduler、IM-gateway）
+```
+
+- `packages/glassvein-router/` 保留为 npm wrapper（内含 Rust 二进制 stage 脚本）。
+
+### 其他
+
+```text
+demos/    → demo 二进制（alpha/beta/gamma-client + observer/control demo）
+examples/ → OSGP 端点示例（osgp-rust-endpoint、osgp-ts-endpoint）
+legacy/   → 已归档旧 glassvein-* crate（不在主 workspace 中）
+```
+
+## 依赖方向
+
+```text
+osgp (osgp/rust)
+├── core
+│   └── router
+└── osgp-client (clients/rust)
+    └── surface
+```
+
+## 命名历史
+
+旧名映射已完成，参见 `docs/CRATE_BOUNDARIES.md` "Old → New name mapping" 节。
+
+## 架构约束（用户决定）
+
+- **Server runtime 使用 Pingora**：router/server 端核心运行时最终迁移到 Pingora；当前原型阶段使用 tokio + tokio-tungstenite。
+- **Wire transport 统一 WebSocket**：所有节点间通信统一使用 WebSocket 协议。
+- **OSGP 协议**：当前 wire 协议向 OSGP 收敛；角色只有 `endpoint` 和 `router`；业务 wire 只有 `upload`/`control`/`request`/`response` + subtype。
+- **禁止恢复的旧协议概念**：`ObserverSurface`/`ControlSurface` 作为 router role、`kind` 字段、`control.command`、standalone `permission`/`question`、`opencode_event` 作为主链路 subtype、wire 字段 `surfaceId`/`surface_id`。`surface` crate 和 `surface-viewer` endpoint 是 SDK/应用层名称，不是 wire 角色。
 
 ## 工作规则
 
-- GlassVein core 不理解 session 业务语义，只处理 `RouteEnvelope`、地址、TTL、trace 与 next-hop。
-- 同 runtime/session 的业务行为应在 client 侧实现；router 只负责跨连接、跨节点转发。
-- 新增 transport 时优先做 adapter，不要把具体网络库写死进 `glassvein-core`。
-- Pingora 负责连接层 ingress/upstream 选择；`domain/runtime/session` 最短路径仍归 GlassVein core。
-- router 间路由通告是双向相邻通告；发送给某邻居时使用 split horizon，避免把从该邻居学到的路由原样通告回去。
+- 禁止引入 workspace crate 循环依赖。
+- `core` 不理解 session 业务语义，只处理地址、信封、TTL、trace 与 next-hop。
+- 新增 transport 时优先做 adapter，不要把具体网络库写死进 `core`。
+- router 只负责跨连接、跨节点转发；同 runtime/session 的业务行为应在 client/surface 侧实现。
+- 本地 npm 发布仅可保留结构或说明；不得在普通脚手架任务中实际发布。
+- 不在本项目任务中执行部署、容器、服务器、Verdaccio 操作。
+- `legacy/` 下的 crate 仅作历史参考，不要在主 workspace 中引用。
+- 目录迁移由对应 owner worker 负责（core/router → GLM-1，endpoints → GLM-2/3/4），不交叉修改。
+
+## 代码规范
+
+- 单文件不超过 500 行（含测试）。超过时优先拆分为独立模块文件。
+- Rust 测试代码应放入 `tests.rs` 子模块（`#[cfg(test)] mod tests;`），与实现分离。
+- TypeScript 文件同样不超过 500 行；超过时拆分为 helper/子模块。
+- `vendor/` 下为第三方代码，不适用此规则。

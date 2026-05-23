@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>IM Endpoint Web</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <h1>IM Endpoint Web</h1>
+      <p>Endpoint-hosted web UI for IM accounts, routes, session bindings, and chat messages.</p>
+    </div>
+    <button id="refreshAll" class="primary">Refresh all</button>
+  </header>
+
+  <main class="layout">
+    <section class="panel config-panel">
+      <h2>Connection</h2>
+      <form id="configForm" class="grid-form">
+        <label>Mode
+          <select name="mode">
+            <option value="direct-mcp">Direct MCP gateway</option>
+            <option value="osgp">OSGP adapter TODO</option>
+          </select>
+        </label>
+        <label>Control endpoint
+          <input name="controlEndpoint" autocomplete="off">
+        </label>
+        <label>Chat endpoint
+          <input name="chatEndpoint" autocomplete="off">
+        </label>
+        <label>OSGP endpoint
+          <input name="osgpEndpoint" autocomplete="off">
+        </label>
+        <button type="submit">Apply</button>
+      </form>
+      <pre id="statusLog" class="log" aria-live="polite"></pre>
+    </section>
+
+    <section class="panel control-panel">
+      <div class="section-head">
+        <h2>Control</h2>
+        <button data-action="refresh-control">Refresh control</button>
+      </div>
+      <div class="cards" id="summaryCards"></div>
+      <div class="columns">
+        <article>
+          <h3>Accounts</h3>
+          <form id="accountForm" class="stack-form">
+            <input name="provider" placeholder="provider" required>
+            <input name="accountID" placeholder="accountID" required>
+            <input name="displayName" placeholder="display name">
+            <textarea name="config" placeholder='config JSON, e.g. {"appId":"..."}'></textarea>
+            <label class="check"><input name="enabled" type="checkbox" checked> enabled</label>
+            <button type="submit">Upsert account</button>
+          </form>
+          <div id="accountsList" class="list"></div>
+        </article>
+        <article>
+          <h3>Chats & members</h3>
+          <form id="chatLookupForm" class="stack-form">
+            <input name="provider" placeholder="provider" required>
+            <input name="accountID" placeholder="accountID" required>
+            <button type="submit">List chats</button>
+          </form>
+          <div id="chatsList" class="list"></div>
+          <form id="membersForm" class="stack-form inline-top">
+            <input name="provider" placeholder="provider" required>
+            <input name="accountID" placeholder="accountID" required>
+            <input name="chatID" placeholder="chatID" required>
+            <button type="submit">List members</button>
+          </form>
+          <div id="membersList" class="list compact"></div>
+        </article>
+      </div>
+      <div class="columns">
+        <article>
+          <h3>Session bindings</h3>
+          <form id="bindingForm" class="stack-form">
+            <input name="sessionBindingID" placeholder="sessionBindingID" required>
+            <input name="runtimeID" placeholder="runtimeID">
+            <input name="sessionID" placeholder="sessionID">
+            <input name="directory" placeholder="directory">
+            <input name="title" placeholder="title">
+            <label class="check"><input name="enabled" type="checkbox" checked> enabled</label>
+            <button type="submit">Upsert binding</button>
+          </form>
+          <div id="bindingsList" class="list"></div>
+        </article>
+        <article>
+          <h3>Routes</h3>
+          <form id="routeForm" class="stack-form">
+            <input name="provider" placeholder="provider" required>
+            <input name="accountID" placeholder="accountID" required>
+            <input name="chatID" placeholder="chatID" required>
+            <input name="chatName" placeholder="chat name">
+            <input name="sessionBindingID" placeholder="sessionBindingID">
+            <label class="check"><input name="enabled" type="checkbox" checked> enabled</label>
+            <button type="submit">Upsert route</button>
+          </form>
+          <div id="routesList" class="list selectable"></div>
+        </article>
+      </div>
+    </section>
+
+    <section class="panel chat-panel">
+      <div class="section-head">
+        <h2>Chat</h2>
+        <span id="activeRoute" class="pill">No route selected</span>
+      </div>
+      <form id="messageForm" class="message-form">
+        <textarea name="text" placeholder="Message text" required></textarea>
+        <button type="submit" class="primary">Send text</button>
+      </form>
+      <div class="button-row">
+        <button data-action="refresh-messages">Refresh messages</button>
+        <button data-action="request-upload-image">Upload placeholder: image</button>
+        <button data-action="request-upload-file">Upload placeholder: file</button>
+      </div>
+      <div id="uploadInfo" class="hint"></div>
+      <div id="messagesList" class="messages"></div>
+    </section>
+  </main>
+
+  <template id="itemTemplate">
+    <button class="item" type="button"></button>
+  </template>
+  <script type="module" src="./src/app.js"></script>
+</body>
+</html>

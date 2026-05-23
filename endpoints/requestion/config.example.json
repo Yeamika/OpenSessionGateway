@@ -1,0 +1,8 @@
+{
+  "nodeId": "<requestion-endpoint-node-id>",
+  "routerUrl": "ws://<router-host>:<router-port>",
+  "address": "<domain>/<runtime>/<session>",
+  "webAddr": "<listen-host>:<listen-port>",
+  "noWeb": false,
+  "seedDemo": false
+}

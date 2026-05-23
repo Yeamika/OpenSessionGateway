@@ -1,15 +1,31 @@
 [workspace]
 resolver = "2"
 members = [
-  "crates/glassvein-protocol",
-  "crates/glassvein-core",
-  "crates/glassvein-router",
-  "crates/glassvein-router-cli",
-  "crates/glassvein-pingora",
-  "examples/tree-demo",
-  "examples/surface-demo",
-  "examples/pingora-surface-demo",
-  "examples/multi-upstream-demo",
+  # ── OSGP protocol ──
+  "osgp/rust",                  # osgp (was session-links)
+
+  # ── Client SDK ──
+  "clients/rust",               # osgp-client (was clientlib + clientroute)
+
+  # ── Core chain ──
+  "core",                       # core (routing primitives)
+  "router",                     # router runtime
+
+  # ── Endpoint crates ──
+  "endpoints/control",          # control-endpoint
+  "endpoints/viewer",           # surface-viewer
+  "endpoints/requestion",       # requestion-endpoint
+  "endpoints/session",          # session-endpoint
+  "endpoints/im",                 # im-endpoint
+
+  # ── Surface library ──
+  "crates/surface",
+
+  # ── Demos ──
+  "demos/alpha-client",
+  "demos/beta-client",
+  "demos/gamma-client",
+  "demos",
 ]
 
 [workspace.package]
@@ -22,12 +38,21 @@ anyhow = "1.0"
 async-trait = "0.1"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-tokio = { version = "1.48", features = ["full"] }
-tokio-tungstenite = "0.28"
+tokio = { version = "1.48", features = ["macros", "rt", "sync"] }
 futures-util = "0.3"
+tokio-tungstenite = { version = "0.28", features = ["connect", "rustls-tls-webpki-roots"] }
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 uuid = { version = "1.19", features = ["v4", "serde"] }
-pingora-core = "0.8.0"
-pingora-proxy = "0.8.0"
-pingora-load-balancing = "0.8.0"
+
+# ── Workspace path deps ──
+osgp = { path = "osgp/rust" }
+osgp-client = { path = "clients/rust" }
+core = { path = "core" }
+gv-core = { path = "core", package = "core" }
+router = { path = "router" }
+surface = { path = "crates/surface" }
+control-endpoint = { path = "endpoints/control" }
+surface-viewer = { path = "endpoints/viewer" }
+requestion-endpoint = { path = "endpoints/requestion" }
+session-endpoint = { path = "endpoints/session" }
+im-endpoint = { path = "endpoints/im" }

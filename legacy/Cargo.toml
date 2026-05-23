@@ -1,0 +1,40 @@
+# Legacy GlassVein crates — pre-refactor architecture.
+# These crates are NOT part of the main workspace and are retained for
+# historical reference only.  They use the old naming scheme
+# (glassvein-protocol, glassvein-core, etc.) and have been superseded
+# by the current workspace crates (session-links, core, router, etc.).
+#
+# Do NOT add new code here.  See docs/OSGP_LEGACY_MIGRATION_NOTES.md.
+
+[workspace]
+resolver = "2"
+members = [
+  "crates/glassvein-protocol",
+  "crates/glassvein-core",
+  "crates/glassvein-clientlib",
+  "crates/glassvein-clientroute",
+  "crates/glassvein-router",
+  "crates/glassvein-router-cli",
+  "crates/glassvein-osg-surface",
+  # "crates/glassvein-pingora",  # excluded: pingora-core 0.4.0 breaks on current toolchain
+]
+
+[workspace.package]
+edition = "2021"
+license = "MIT"
+version = "0.1.0"
+
+[workspace.dependencies]
+anyhow = "1.0"
+async-trait = "0.1"
+futures-util = "0.3"
+pingora-core = "0.4.0"
+pingora-load-balancing = "0.4.0"
+pingora-proxy = "0.4.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "1.48", features = ["macros", "rt", "rt-multi-thread", "sync", "time"] }
+tokio-tungstenite = { version = "0.28", features = ["connect", "rustls-tls-webpki-roots"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+uuid = { version = "1.19", features = ["v4", "serde"] }

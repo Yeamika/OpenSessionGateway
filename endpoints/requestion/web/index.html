@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>requestion-endpoint</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header>
+      <p>GlassVein endpoint project</p>
+      <h1>Requestion approvals</h1>
+      <button id="refresh" type="button">Refresh</button>
+    </header>
+    <main>
+      <section id="requestions" class="grid"></section>
+      <section>
+        <h2>Activity</h2>
+        <ol id="log"></ol>
+      </section>
+    </main>
+    <template id="card-template">
+      <article class="card">
+        <div class="card-head">
+          <div>
+            <h2 class="title"></h2>
+            <p class="meta"></p>
+          </div>
+          <span class="badge">pending</span>
+        </div>
+        <pre class="payload"></pre>
+        <form>
+          <textarea name="response" rows="3" placeholder="Optional response or reason"></textarea>
+          <div class="actions">
+            <button name="decision" value="approve">Approve</button>
+            <button name="decision" value="reject" class="danger">Reject</button>
+            <button name="decision" value="response" class="secondary">Respond</button>
+          </div>
+        </form>
+      </article>
+    </template>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

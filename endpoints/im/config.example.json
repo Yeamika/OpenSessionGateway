@@ -1,0 +1,31 @@
+{
+  "routerUrl": "ws://127.0.0.1:7200",
+  "accounts": [
+    {
+      "provider": "feishu",
+      "accountID": "feishu-main",
+      "displayName": "Feishu Main",
+      "enabled": true,
+      "credentials": {
+        "appId": "<APP_ID>",
+        "appSecret": "<APP_SECRET>",
+        "verificationToken": "<VERIFICATION_TOKEN>",
+        "encryptKey": "<ENCRYPT_KEY>"
+      },
+      "test": {
+        "chatID": "<OPTIONAL_TEST_CHAT_ID>",
+        "allowSendSmoke": false
+      }
+    },
+    {
+      "provider": "local",
+      "accountID": "local-dev",
+      "displayName": "Local Dev",
+      "enabled": true,
+      "config": {
+        "defaultChatID": "local-chat",
+        "defaultChatName": "Local Chat"
+      }
+    }
+  ]
+}
