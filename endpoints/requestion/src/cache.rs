@@ -88,16 +88,16 @@ impl SessionStateCache {
 
 /// A pending requestion, permission, or question.
 ///
-/// `kind` stores the original envelope kind (e.g. `"requestion.asked"`,
-/// `"permission.asked"`, `"question.asked"`) for OSGP unified requestion semantics.
+/// `event_subtype` stores the normalized requestion event label, for example
+/// `"requestion.asked"`, for OSGP unified requestion semantics.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PendingRequestion {
     pub session_id: String,
     pub request_id: String,
     pub title: String,
     pub source: SessionAddress,
-    /// Original envelope kind, e.g. `"requestion.asked"`, `"permission.asked"`.
-    pub kind: String,
+    /// Normalized event subtype, e.g. `"requestion.asked"`.
+    pub event_subtype: String,
     pub payload: Value,
     pub updated_at: String,
 }
@@ -123,7 +123,7 @@ impl RequestionCache {
         request_id: String,
         title: String,
         source: SessionAddress,
-        kind: String,
+        event_subtype: String,
         payload: Value,
     ) {
         let now = epoch_timestamp();
@@ -135,7 +135,7 @@ impl RequestionCache {
                 request_id,
                 title,
                 source,
-                kind,
+                event_subtype,
                 payload,
                 updated_at: now,
             },

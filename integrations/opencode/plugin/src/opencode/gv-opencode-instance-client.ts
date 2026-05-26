@@ -197,6 +197,7 @@ export class GvOpencodeInstanceClient {
 
     const payload: Record<string, unknown> = {
       sessionId: sessionID,
+      runtimeId: this.runtimeIDForMcp || undefined,
       state: row?.state || "idle",
     }
     if (title) payload.title = title
@@ -319,6 +320,15 @@ export class GvOpencodeInstanceClient {
         VeinManager.upload("requestion_updated", questionUpdatedPayload)
       }
     }
+    if (type === "question.cancelled") {
+      const questionCancelledPayload = buildQuestionUpdatedPayload({
+        event: event && typeof event === "object" ? event as Record<string, unknown> : {},
+        status: "cancelled",
+      })
+      if (questionCancelledPayload) {
+        VeinManager.upload("requestion_cancelled", questionCancelledPayload)
+      }
+    }
 
     // 6. Seed execution waiters on session select/create
     if (result.selected || type === "session.created") {
@@ -351,7 +361,8 @@ export class GvOpencodeInstanceClient {
     const result = await VeinManager.start(instance, {
       routerUrl: this.readRouterUrl(),
       nodeId: this.key().split(/[\\/]/).filter(Boolean).pop() || "unknown",
-      domain: this.key().split(/[\\/]/).filter(Boolean).pop() || "workspace",
+      domain: "opencode",
+      runtime: this.key().split(/[\\/]/).filter(Boolean).pop() || "unknown",
     })
     this.runtimeIDForMcp = result.runtimeID
     this.routerUrlForMcp = result.routerUrl
@@ -362,6 +373,7 @@ export class GvOpencodeInstanceClient {
     if (cwd) {
       VeinManager.upload("session_update", {
         sessionId: "",
+        runtimeId: this.runtimeIDForMcp || undefined,
         state: "idle",
         instanceWorkspaceDirectory: cwd,
       })

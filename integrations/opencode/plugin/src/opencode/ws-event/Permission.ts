@@ -78,7 +78,7 @@ export function buildPermissionAskedPayload(input: {
   const title = firstString(source, ["title", "description", "summary", "command"])
   const reason = text(source.reason) || text(source.description) || text(source.summary)
   const tool = text(source.tool) || text(source.command)
-  const action = firstString(source, ["action", "type", "kind"])
+  const action = firstString(source, ["action", "type"])
   const actionDescription = text(source.actionDescription) || text(source.description)
   const createdAt = readTime(source.createdAt) || readTime(source.timeCreated) || readTime(source.timestamp) || new Date().toISOString()
 

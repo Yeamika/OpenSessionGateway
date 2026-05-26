@@ -17,6 +17,16 @@ function text(value: unknown): string {
   return typeof value === "string" ? value.trim() : ""
 }
 
+function handleWorkspaceViewSnapshot(ctx: any) {
+  const directory = text(ctx?.directory)
+  const title = directory.split(/[\\/]/).filter(Boolean).pop() || directory || "unknown"
+  return {
+    ok: true,
+    workspaces: directory ? [{ instanceWorkspaceDirectory: directory, title }] : [],
+    count: directory ? 1 : 0,
+  }
+}
+
 /**
  * Session state registry — tracks current session_update state per sessionID.
  * This is populated by VeinManager when session.status events are received.
@@ -67,9 +77,18 @@ export async function handleSnapshotReadRequest(
   path: string,
   params?: Record<string, unknown>,
 ): Promise<unknown> {
-  const sessionID = text(params?.sessionID)
+  const sessionID = text(params?.sessionID) || text(params?.sessionId)
 
   switch (path) {
+    case "runtime_workspace_view_snapshot":
+      return handleWorkspaceViewSnapshot(ctx)
+
+    case "runtime_requestion_snapshot":
+      return handleRequestionSnapshot(sessionID)
+
+    case "runtime_session_view_snapshot":
+      return handleSessionViewSnapshot(ctx, sessionID)
+
     case "session.update.snapshot":
       return handleSessionUpdateSnapshot(sessionID)
 

@@ -1,6 +1,9 @@
 //! GV control-envelope construction for requestion responses.
 
-use osgp::{SessionAddress, SessionEnvelope};
+use osgp::{
+    Envelope, LinkType, Payload, RouteTarget, SessionAddress, SessionCommand, SessionCommandKind,
+    SessionId,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use uuid::Uuid;
@@ -48,16 +51,17 @@ mod tests {
 
         let envelope = build_requestion_respond(&source, target.clone(), &request);
 
-        assert_eq!(envelope.source, source);
-        assert_eq!(envelope.target, target);
-        assert_eq!(envelope.link_type, "control");
+        assert_eq!(envelope.source, RouteTarget::address(source));
+        assert_eq!(envelope.target, RouteTarget::address(target));
+        assert_eq!(envelope.link_type, LinkType::Control);
         assert_eq!(envelope.subtype, "requestion_respond");
-        assert_eq!(envelope.payload["sessionID"], "ses-a");
-        assert_eq!(envelope.payload["requestID"], "req-a");
-        assert_eq!(envelope.payload["answers"][0][0], "approve");
-        assert_eq!(envelope.payload["response"], "ok");
-        assert_eq!(envelope.payload["ExecutorSessionID"], "caller-ses");
-        assert_eq!(envelope.payload["ExecutorRuntimeID"], "caller-rt");
+        let payload = respond_payload(&envelope);
+        assert_eq!(payload["sessionID"], "ses-a");
+        assert_eq!(payload["requestID"], "req-a");
+        assert_eq!(payload["answers"][0][0], "approve");
+        assert_eq!(payload["response"], "ok");
+        assert_eq!(payload["ExecutorSessionID"], "caller-ses");
+        assert_eq!(payload["ExecutorRuntimeID"], "caller-rt");
     }
 
     #[test]
@@ -97,14 +101,14 @@ pub struct QueuedResponse {
 
 #[derive(Debug, Clone)]
 pub struct OutboundControl {
-    pub envelope: SessionEnvelope,
+    pub envelope: Envelope,
 }
 
 pub fn build_requestion_respond(
     source: &SessionAddress,
     target: SessionAddress,
     request: &RespondRequest,
-) -> SessionEnvelope {
+) -> Envelope {
     let answers = if request.answers.is_empty() {
         answers_from_decision(&request.decision, &request.response)
     } else {
@@ -116,14 +120,7 @@ pub fn build_requestion_respond(
         request.response.clone()
     };
 
-    SessionEnvelope {
-        id: Uuid::new_v4(),
-        source: source.clone(),
-        target,
-        kind: "control".into(),
-        link_type: "control".into(),
-        subtype: "requestion_respond".into(),
-        payload: json!({
+    let payload = json!({
             "sessionID": request.session_id,
             "sessionId": request.session_id,
             "requestID": request.request_id,
@@ -137,10 +134,29 @@ pub fn build_requestion_respond(
             "ExecutorRuntimeID": request.executor_runtime_id,
             "executorRuntimeID": request.executor_runtime_id,
             "source": format_address(source),
+    });
+    Envelope {
+        message_id: Uuid::new_v4().to_string(),
+        source: RouteTarget::address(source.clone()),
+        target: RouteTarget::address(target),
+        payload: Payload::SessionCommand(SessionCommand {
+            command: "requestion_respond".into(),
+            subtype: SessionCommandKind::RequestionRespond {
+                session_id: SessionId(request.session_id.clone()),
+                requestion_id: request.request_id.clone(),
+            },
+            payload,
         }),
-        ttl: 32,
+        link_type: LinkType::Control,
+        subtype: "requestion_respond".into(),
         route_hops: Vec::new(),
-        origin_surface: None,
+    }
+}
+
+pub fn respond_payload(envelope: &Envelope) -> &serde_json::Value {
+    match &envelope.payload {
+        Payload::SessionCommand(command) => &command.payload,
+        _ => &serde_json::Value::Null,
     }
 }
 

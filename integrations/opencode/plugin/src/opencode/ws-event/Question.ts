@@ -96,7 +96,7 @@ export function buildQuestionAskedPayload(input: {
  */
 export function buildQuestionUpdatedPayload(input: {
   event: Record<string, unknown>
-  status: "answered" | "rejected" | "failed"
+  status: "answered" | "rejected" | "failed" | "cancelled"
 }) {
   const src = source(input.event)
   const sessionID = text(src.sessionID)

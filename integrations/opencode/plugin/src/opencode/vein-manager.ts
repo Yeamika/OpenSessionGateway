@@ -22,6 +22,7 @@ import type { UploadSubtype } from "@opensessiongateway/osgp"
 import { type OpencodeClient } from "@opencode-ai/sdk/v2"
 import { handleServerEvent } from "./server-event.js"
 import { handleSnapshotReadRequest } from "./ws-event/Snapshot.js"
+import { handleGetSessionMsg } from "./ws-event/GetSessionMsg.js"
 
 export type WriteLog = (level: string, message: string, extra?: Record<string, unknown>) => Promise<void>
 
@@ -144,13 +145,15 @@ export const VeinManager = {
     if (!state.starting && !state.client) {
       state.starting = (async () => {
         const nodeId = config.nodeId || text(owner.ctx?.directory).split(/[\\/]/).filter(Boolean).pop() || "unknown"
-        state.runtimeID = nodeId
+        const runtime = config.runtime || nodeId
+        state.runtimeID = runtime
         state.routerUrl = config.routerUrl
         await syncTuiStatus({ status: "connecting", ctx: owner.ctx })
 
         const client = new GlassveinWsClient({
           ...config,
           nodeId,
+          runtime,
         })
 
         client.on("connected", () => {
@@ -171,7 +174,7 @@ export const VeinManager = {
           const item = resolveInstanceForCommand(payload)
           if (!item) {
             void state.writeLog("warn", "control command: instance not found", { subtype: command.subtype })
-            return
+            return { ok: false, accepted: false, error: "target instance not found", subtype: command.subtype }
           }
 
           try {
@@ -194,31 +197,36 @@ export const VeinManager = {
               },
             )
             void state.writeLog("info", "control command handled", { subtype: command.subtype, result })
+            return result
           } catch (error) {
             void state.writeLog("error", "control command failed", {
               subtype: command.subtype,
               error: error instanceof Error ? error.message : String(error),
             })
+            return { ok: false, accepted: false, subtype: command.subtype, error: error instanceof Error ? error.message : String(error) }
           }
         })
 
-        // Read request handler — responds to snapshot queries from router/control-surface
-        client.onReadRequest(async (request) => {
-          const { path, params } = request
-          void state.writeLog("info", "read request received", { path, params })
+        // Request handler — responds to canonical OSGP request envelopes.
+        client.onRequest(async (request) => {
+          const { subtype, payload } = request
+          void state.writeLog("info", "request received", { subtype, payload })
 
           // Use the first instance's context for snapshot queries
           // (snapshot queries are not instance-specific)
           const firstInstance = [...state.instances.values()][0]
           if (!firstInstance) {
-            return { error: "no instance registered" }
+            return { ok: false, error: "no instance registered" }
           }
 
           try {
-            return await handleSnapshotReadRequest(firstInstance.ctx, path, params)
+            if (subtype === "runtime_session_messages") {
+              return await handleGetSessionMsg(firstInstance.v2client, firstInstance.query, state.runtimeID, payload)
+            }
+            return await handleSnapshotReadRequest(firstInstance.ctx, subtype, payload)
           } catch (error) {
-            void state.writeLog("error", "read request failed", {
-              path,
+            void state.writeLog("error", "request failed", {
+              subtype,
               error: error instanceof Error ? error.message : String(error),
             })
             return { error: error instanceof Error ? error.message : String(error) }
@@ -227,7 +235,7 @@ export const VeinManager = {
 
         await client.connect()
         state.client = client
-        await state.writeLog("info", "vein client started", { routerUrl: config.routerUrl, nodeId })
+        await state.writeLog("info", "vein client started", { routerUrl: config.routerUrl, nodeId, runtime })
       })().finally(() => {
         state.starting = null
       })

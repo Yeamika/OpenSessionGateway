@@ -1,4 +1,5 @@
 use super::*;
+use crate::gv_client::respond_payload;
 use osgp::SessionAddress;
 use std::{
     fs,
@@ -68,9 +69,15 @@ async fn api_respond_queues_control_to_original_source() {
     let body: Value = serde_json::from_str(&response.body).unwrap();
     assert_eq!(body["ok"], true);
     let outbound = rx.recv().await.unwrap();
-    assert_eq!(outbound.envelope.target, addr("runtime-a", "ses-a"));
+    assert_eq!(
+        outbound.envelope.target,
+        osgp::RouteTarget::address(addr("runtime-a", "ses-a"))
+    );
     assert_eq!(outbound.envelope.subtype, "requestion_respond");
-    assert_eq!(outbound.envelope.payload["answers"][0][0], "approve");
+    assert_eq!(
+        respond_payload(&outbound.envelope)["answers"][0][0],
+        "approve"
+    );
 }
 
 #[tokio::test]
@@ -144,10 +151,19 @@ async fn mcp_respond_uses_explicit_executor_session_id() {
     let body: Value = serde_json::from_str(&response.body).unwrap();
     assert!(body.get("error").is_none());
     let outbound = rx.recv().await.unwrap();
-    assert_eq!(outbound.envelope.target, addr("runtime-a", "ses-a"));
-    assert_eq!(outbound.envelope.payload["ExecutorSessionID"], "caller-ses");
-    assert_eq!(outbound.envelope.payload["ExecutorRuntimeID"], "caller-rt");
-    assert_eq!(outbound.envelope.payload["answers"][0][0], "deny");
+    assert_eq!(
+        outbound.envelope.target,
+        osgp::RouteTarget::address(addr("runtime-a", "ses-a"))
+    );
+    assert_eq!(
+        respond_payload(&outbound.envelope)["ExecutorSessionID"],
+        "caller-ses"
+    );
+    assert_eq!(
+        respond_payload(&outbound.envelope)["ExecutorRuntimeID"],
+        "caller-rt"
+    );
+    assert_eq!(respond_payload(&outbound.envelope)["answers"][0][0], "deny");
 }
 
 #[tokio::test]
@@ -161,8 +177,14 @@ async fn mcp_respond_accepts_auto_injected_executor_session_id() {
     let body: Value = serde_json::from_str(&response.body).unwrap();
     assert!(body.get("error").is_none());
     let outbound = rx.recv().await.unwrap();
-    assert_eq!(outbound.envelope.payload["ExecutorSessionID"], "auto-ses");
-    assert_eq!(outbound.envelope.payload["answers"][0][0], "hello");
+    assert_eq!(
+        respond_payload(&outbound.envelope)["ExecutorSessionID"],
+        "auto-ses"
+    );
+    assert_eq!(
+        respond_payload(&outbound.envelope)["answers"][0][0],
+        "hello"
+    );
 }
 
 #[tokio::test]
@@ -176,7 +198,10 @@ async fn mcp_respond_accepts_runtime_id_query_convention_for_executor_runtime() 
     let body: Value = serde_json::from_str(&response.body).unwrap();
     assert!(body.get("error").is_none());
     let outbound = rx.recv().await.unwrap();
-    assert_eq!(outbound.envelope.payload["ExecutorRuntimeID"], "caller-rt");
+    assert_eq!(
+        respond_payload(&outbound.envelope)["ExecutorRuntimeID"],
+        "caller-rt"
+    );
 }
 
 #[tokio::test]
@@ -214,9 +239,12 @@ async fn api_reload_config_updates_source_and_preserves_pending_cache() {
     let outbound = rx.recv().await.unwrap();
     assert_eq!(
         outbound.envelope.source,
-        addr("reloaded-runtime", "reloaded-session")
+        osgp::RouteTarget::address(addr("reloaded-runtime", "reloaded-session"))
     );
-    assert_eq!(outbound.envelope.target, addr("runtime-a", "ses-a"));
+    assert_eq!(
+        outbound.envelope.target,
+        osgp::RouteTarget::address(addr("runtime-a", "ses-a"))
+    );
     let _ = fs::remove_file(path);
 }
 

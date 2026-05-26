@@ -178,7 +178,8 @@ fn tool_schema(name: &str) -> Value {
 fn requires_executor(name: &str) -> bool {
     matches!(
         name,
-        "UpsertAccount"
+        "ReloadConfig"
+            | "UpsertAccount"
             | "DeleteAccount"
             | "CreateAccountChat"
             | "DeleteAccountChat"

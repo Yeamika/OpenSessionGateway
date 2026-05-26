@@ -337,7 +337,7 @@ async fn dotted_compat_requestion_input_is_still_cached() {
         }),
     );
     envelope.link_type = "legacy".into();
-    envelope.kind = "requestion.asked".into();
+    envelope.payload["eventSubtype"] = json!("requestion.asked");
     handle_envelope(&envelope, &sessions, &requestions).await;
     assert!(requestions
         .read()
@@ -364,31 +364,28 @@ async fn missing_session_or_request_id_is_ignored() {
 
 // ── helpers ──
 
-fn make_pending(kind: &str) -> PendingRequestion {
+fn make_pending(event_subtype: &str) -> PendingRequestion {
     PendingRequestion {
         session_id: "s".into(),
         request_id: "r".into(),
         title: "t".into(),
         source: test_requester_address(),
-        kind: kind.into(),
+        event_subtype: event_subtype.into(),
         payload: json!({}),
         updated_at: "0.000".into(),
     }
 }
 
 fn upload(subtype: &str, payload: Value) -> SessionEnvelope {
-    SessionEnvelope {
-        id: Uuid::new_v4(),
-        source: test_requester_address(),
-        target: test_self_address(),
-        kind: "upload".into(),
-        link_type: "upload".into(),
-        subtype: subtype.into(),
+    let mut envelope = SessionEnvelope::new(
+        test_requester_address(),
+        test_self_address(),
+        "upload",
         payload,
-        ttl: 32,
-        route_hops: Vec::new(),
-        origin_surface: None,
-    }
+    );
+    envelope.link_type = "upload".into();
+    envelope.subtype = subtype.into();
+    envelope
 }
 
 fn payload_get_str(payload: &Value, key: &str) -> Option<String> {

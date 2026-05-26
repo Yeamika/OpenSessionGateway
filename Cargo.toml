@@ -12,10 +12,10 @@ members = [
   "router",                     # router runtime
 
   # ── Endpoint crates ──
-  "endpoints/control",          # control-endpoint
-  "endpoints/viewer",           # surface-viewer
+  "endpoints/console",          # console-endpoint (replaces control/viewer)
   "endpoints/requestion",       # requestion-endpoint
-  "endpoints/session",          # session-endpoint
+  "endpoints/session-control",  # session-control-endpoint
+  "endpoints/mailbox",          # mailbox-endpoint
   "endpoints/im",                 # im-endpoint
 
   # ── Surface library ──
@@ -51,8 +51,9 @@ core = { path = "core" }
 gv-core = { path = "core", package = "core" }
 router = { path = "router" }
 surface = { path = "crates/surface" }
-control-endpoint = { path = "endpoints/control" }
-surface-viewer = { path = "endpoints/viewer" }
+console-endpoint = { path = "endpoints/console" }
 requestion-endpoint = { path = "endpoints/requestion" }
-session-endpoint = { path = "endpoints/session" }
+session-control-endpoint = { path = "endpoints/session-control" }
 im-endpoint = { path = "endpoints/im" }
+
+mailbox-endpoint = { path = "endpoints/mailbox" }

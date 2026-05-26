@@ -17,7 +17,8 @@ impl AppState {
         require_executor(tool, &args)?;
         let mutating = matches!(
             tool,
-            "UpsertAccount"
+            "ReloadConfig"
+                | "UpsertAccount"
                 | "DeleteAccount"
                 | "CreateAccountChat"
                 | "DeleteAccountChat"
@@ -89,7 +90,8 @@ fn require_executor(tool: &str, args: &Value) -> Result<()> {
 fn requires_executor(tool: &str) -> bool {
     matches!(
         tool,
-        "UpsertAccount"
+        "ReloadConfig"
+            | "UpsertAccount"
             | "DeleteAccount"
             | "CreateAccountChat"
             | "DeleteAccountChat"

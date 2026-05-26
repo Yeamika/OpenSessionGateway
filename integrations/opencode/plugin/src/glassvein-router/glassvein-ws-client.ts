@@ -8,7 +8,7 @@
  * Wire protocol follows OpenSessionGateway Protocol (OSGP):
  *   - Hello: {nodeId, role:"endpoint"|"router", addresses, capabilities}
  *   - LinkMessage: {type: "announce"|"envelope"|..., data: {...}}
- *   - SessionEnvelope business filter: linkType + subtype; `kind` is not used.
+ *   - SessionEnvelope business filter: linkType + subtype.
  *   - SessionAddress: {domain, runtime?, session?}  (camelCase)
  */
 
@@ -36,6 +36,7 @@ import {
   routerAddressToRouteTarget,
   routerEnvelopeToOsgp,
   createUploadLinkMessage,
+  createResponseLinkMessage,
   createRouterHello,
   createAnnounceLinkMessage,
 } from "./osgp-adapter.js"
@@ -93,14 +94,21 @@ export type ControlCommandHandler = (command: {
   subtype: string
   payload: unknown
   source: RouterSessionAddress
-}) => void
+}) => Promise<unknown> | unknown
 
-export type ReadRequestHandler = (request: {
+export type OsgpRequestHandler = (request: {
   id: string
+  subtype: string
+  source: RouterSessionAddress
   target: RouterSessionAddress
-  path: string
-  params?: Record<string, unknown>
+  payload: Record<string, unknown>
 }) => Promise<unknown>
+
+export type ReadRequestHandler = OsgpRequestHandler
+
+function readPayload(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" ? value as Record<string, unknown> : {}
+}
 
 // ── GlassveinWsClient ───────────────────────────────────────────────
 
@@ -113,8 +121,44 @@ export class GlassveinWsClient extends EventEmitter {
     lastError: "",
     reconnectAttempt: 0,
   }
+
+  private async handleControlEnvelope(env: RouterSessionEnvelope): Promise<void> {
+    const source = env.source
+    if (!this.controlCommandHandler) {
+      this.sendCanonicalResponse(env, { ok: false, error: "control handler not registered" })
+      return
+    }
+    try {
+      const result = await this.controlCommandHandler({ subtype: env.subtype, payload: env.payload, source })
+      this.sendCanonicalResponse(env, { ok: true, data: result ?? null })
+    } catch (error) {
+      this.sendCanonicalResponse(env, { ok: false, error: error instanceof Error ? error.message : String(error) })
+    }
+  }
+
+  private async handleRequestEnvelope(env: RouterSessionEnvelope): Promise<void> {
+    const payload = readPayload(env.payload)
+    if (!this.requestHandler) {
+      this.sendCanonicalResponse(env, { ok: false, error: "request handler not registered" })
+      return
+    }
+    try {
+      const data = await this.requestHandler({ id: env.id, subtype: env.subtype, source: env.source, target: env.target, payload })
+      this.sendCanonicalResponse(env, { ok: true, data })
+    } catch (error) {
+      this.sendCanonicalResponse(env, { ok: false, error: error instanceof Error ? error.message : String(error) })
+    }
+  }
+
+  private sendCanonicalResponse(env: RouterSessionEnvelope, payload: Record<string, unknown>): boolean {
+    return this.sendLinkMessage(createResponseLinkMessage(env.subtype, this.address, env.source, payload, {
+      messageId: env.id,
+      ttl: 32,
+      routeHops: [],
+    }))
+  }
   private controlCommandHandler: ControlCommandHandler | null = null
-  private readRequestHandler: ReadRequestHandler | null = null
+  private requestHandler: OsgpRequestHandler | null = null
   private readonly address: RouterSessionAddress
 
   constructor(config: GlassveinClientConfig) {
@@ -149,9 +193,18 @@ export class GlassveinWsClient extends EventEmitter {
     this.controlCommandHandler = handler
   }
 
+  /** Register a handler for incoming canonical OSGP request envelopes */
+  onRequest(handler: OsgpRequestHandler): void {
+    this.requestHandler = handler
+  }
+
   /** Register a handler for incoming read requests */
   onReadRequest(handler: ReadRequestHandler): void {
-    this.readRequestHandler = handler
+    this.requestHandler = handler
+  }
+
+  getSourceAddress(): RouterSessionAddress {
+    return { ...this.address }
   }
 
   /** Connect to the GlassVein router */
@@ -212,10 +265,6 @@ export class GlassveinWsClient extends EventEmitter {
     return this.sendLinkMessage(msg)
   }
 
-  /**
-   * @deprecated Use sendUploadEvent with explicit canonical subtype instead.
-   * This method converts event.type via dot-to-underscore for backward compat.
-   */
   sendOpencodeEvent(event: { type: string; properties?: Record<string, unknown> }): boolean {
     const subtype = event.type === "session_update"
       ? "session_update" as UploadSubtype
@@ -223,7 +272,6 @@ export class GlassveinWsClient extends EventEmitter {
     return this.sendUploadEvent(subtype, event.properties || {})
   }
 
-  /** Send a workspace_register announcement */
   sendWorkspaceRegister(): boolean {
     return this.sendLinkMessage(createAnnounceLinkMessage(this.address, 0))
   }
@@ -288,7 +336,6 @@ export class GlassveinWsClient extends EventEmitter {
     })
   }
 
-  /** Send OSGP Hello (plain struct, camelCase; not a LinkMessage) */
   private async sendHello(): Promise<void> {
     const hello = createRouterHello(
       this.config.nodeId,
@@ -330,19 +377,14 @@ export class GlassveinWsClient extends EventEmitter {
       if (msg.type === "envelope" && "id" in msg) {
         const env = msg as unknown as RouterSessionEnvelope
         if (env.linkType === "control") {
-          if (this.controlCommandHandler) {
-            this.controlCommandHandler({
-              subtype: env.subtype,
-              payload: env.payload,
-              source: env.source,
-            })
-          }
+          void this.handleControlEnvelope(env)
           this.emit("control_command", env)
+        } else if (env.linkType === "request") {
+          void this.handleRequestEnvelope(env)
+          this.emit("request", env)
         } else {
           this.emit("message", msg)
         }
-      } else if (msg.type === "read_request" && "data" in msg) {
-        this.handleReadRequest(msg.data as { id: string; target: RouterSessionAddress; path: string; params?: Record<string, unknown> })
       } else if (msg.type === "ping") {
         this.sendLinkMessage({ type: "pong" })
       } else if (msg.type === "pong") {
@@ -355,44 +397,6 @@ export class GlassveinWsClient extends EventEmitter {
     } catch (error) {
       this.emit("error", error)
     }
-  }
-
-  private async handleReadRequest(request: { id: string; target: RouterSessionAddress; path: string; params?: Record<string, unknown> }): Promise<void> {
-    if (!this.readRequestHandler) {
-      this.sendReadResponse({
-        id: request.id,
-        data: null,
-        error: "read request handler not registered",
-      })
-      return
-    }
-
-    try {
-      const data = await this.readRequestHandler({
-        id: request.id,
-        target: request.target,
-        path: request.path,
-        params: request.params,
-      })
-      this.sendReadResponse({
-        id: request.id,
-        data,
-      })
-    } catch (error) {
-      this.sendReadResponse({
-        id: request.id,
-        data: null,
-        error: error instanceof Error ? error.message : String(error),
-      })
-    }
-  }
-
-  private sendReadResponse(response: { id: string; data: unknown; error?: string }): boolean {
-    const msg: LinkMessage = {
-      type: "read_response",
-      data: response,
-    }
-    return this.sendLinkMessage(msg)
   }
 
   private scheduleReconnect(): void {
@@ -427,9 +431,6 @@ export class GlassveinWsClient extends EventEmitter {
 
 // ── Factory ─────────────────────────────────────────────────────────
 
-/**
- * Create a GlassveinWsClient for a workspace instance.
- */
 export function createGlassveinClient(
   ctx: { directory?: string },
   config: Pick<GlassveinClientConfig, "routerUrl"> & Partial<Omit<GlassveinClientConfig, "routerUrl">>,

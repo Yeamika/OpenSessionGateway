@@ -22,13 +22,14 @@ import type {
   OsgpEnvelope,
   OsgpType,
   UploadSubtype,
+  ResponseSubtype,
   HelloMessage as OsgpHelloMessage,
   RouterSessionAddress,
   RouterSessionEnvelope,
   LinkMessage,
   RouterHelloMessage,
 } from "@opensessiongateway/osgp"
-import { createUpload, createHello } from "@opensessiongateway/osgp"
+import { createUpload, createResponse, createHello } from "@opensessiongateway/osgp"
 
 export type {
   RouterSessionAddress,
@@ -95,14 +96,13 @@ export function osgpEnvelopeToRouter(env: OsgpEnvelope): RouterSessionEnvelope {
     id: env.messageId ?? crypto.randomUUID(),
     source: sourceAddr,
     target: targetAddr,
-    kind: linkType,
     linkType,
     subtype: env.subtype,
     payload: env.payload,
     ttl: env.ttl ?? 32,
     routeHops: env.routeHops ? [...env.routeHops] : [],
     ...(env.originSurface ? { originSurface: env.originSurface } : {}),
-  }
+  } as unknown as RouterSessionEnvelope
 }
 
 /**
@@ -140,6 +140,30 @@ export function createUploadLinkMessage(
   return {
     type: "envelope",
     ...routerEnv,
+  }
+}
+
+export function createResponseLinkMessage(
+  subtype: ResponseSubtype,
+  sourceAddress: RouterSessionAddress,
+  targetAddress: RouterSessionAddress,
+  payload: Record<string, unknown>,
+  options?: { messageId?: string; ttl?: number; routeHops?: string[] },
+): LinkMessage {
+  const envelope = createResponse(
+    subtype,
+    routerAddressToRouteTarget(sourceAddress),
+    routerAddressToRouteTarget(targetAddress),
+    payload,
+    {
+      messageId: options?.messageId,
+      ttl: options?.ttl ?? 32,
+      routeHops: options?.routeHops ?? [],
+    },
+  )
+  return {
+    type: "envelope",
+    ...osgpEnvelopeToRouter(envelope),
   }
 }
 

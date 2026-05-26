@@ -45,10 +45,10 @@ pub async fn handle_envelope(
     session_cache: &Arc<RwLock<SessionStateCache>>,
     requestion_cache: &Arc<RwLock<RequestionCache>>,
 ) {
-    let kind = requestion_event_name(envelope);
+    let event_subtype = requestion_event_subtype(envelope);
     let payload = &envelope.payload;
 
-    match kind.as_str() {
+    match event_subtype.as_str() {
         "session_update" => {
             let session_id = extract_any_field(payload, &["sessionID", "sessionId"]);
             let state = extract_field(payload, "state");
@@ -78,14 +78,14 @@ pub async fn handle_envelope(
                     request_id.clone(),
                     title.clone(),
                     envelope.source.clone(),
-                    kind.clone(),
+                    event_subtype.clone(),
                     payload.clone(),
                 );
                 info!(
                     session_id,
-                    request_id, title, kind, "upserted pending requestion"
+                    request_id, title, event_subtype, "upserted pending requestion"
                 );
-                println!("[{kind}] session_id={session_id} request_id={request_id} title={title}");
+                println!("[{event_subtype}] session_id={session_id} request_id={request_id} title={title}");
             }
         }
         "requestion.resolved" | "requestion.cancelled" => {
@@ -96,8 +96,10 @@ pub async fn handle_envelope(
             if !session_id.is_empty() && !request_id.is_empty() {
                 let mut cache = requestion_cache.write().await;
                 cache.remove(&session_id, &request_id);
-                info!(session_id, request_id, kind, "removed from cache");
-                println!("[{kind}] session_id={session_id} request_id={request_id} removed");
+                info!(session_id, request_id, event_subtype, "removed from cache");
+                println!(
+                    "[{event_subtype}] session_id={session_id} request_id={request_id} removed"
+                );
             }
         }
         "requestion.updated" => {
@@ -113,14 +115,14 @@ pub async fn handle_envelope(
                     request_id.clone(),
                     title.clone(),
                     envelope.source.clone(),
-                    kind.clone(),
+                    event_subtype.clone(),
                     payload.clone(),
                 );
-                debug!(session_id, request_id, kind, "merged into cache");
+                debug!(session_id, request_id, event_subtype, "merged into cache");
             }
         }
         _ => {
-            debug!(kind, "ignoring envelope kind");
+            debug!(event_subtype, "ignoring envelope subtype");
         }
     }
 }
@@ -349,7 +351,7 @@ fn session_id_from_payload_or_source(payload: &Value, source: &SessionAddress) -
     }
 }
 
-fn requestion_event_name(envelope: &osgp::SessionEnvelope) -> String {
+fn requestion_event_subtype(envelope: &osgp::SessionEnvelope) -> String {
     if envelope.link_type == "upload" {
         return match envelope.subtype.as_str() {
             "requestion_asked" => "requestion.asked".into(),
@@ -360,7 +362,16 @@ fn requestion_event_name(envelope: &osgp::SessionEnvelope) -> String {
             other => other.into(),
         };
     }
-    envelope.kind.clone()
+    compat_event_subtype(envelope)
+}
+
+fn compat_event_subtype(envelope: &osgp::SessionEnvelope) -> String {
+    envelope
+        .payload
+        .get("eventSubtype")
+        .and_then(|v| v.as_str())
+        .unwrap_or(envelope.subtype.as_str())
+        .to_string()
 }
 
 /// Filter requestions by status suffix (e.g. `"asked"`, `"resolved"`).
@@ -371,7 +382,7 @@ fn filter_by_suffix<'a>(
     match status {
         Some(filter) => items
             .into_iter()
-            .filter(|r| r.kind.ends_with(&format!(".{filter}")))
+            .filter(|r| r.event_subtype.ends_with(&format!(".{filter}")))
             .collect(),
         None => items,
     }

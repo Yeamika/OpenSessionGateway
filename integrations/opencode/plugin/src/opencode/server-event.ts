@@ -2,7 +2,7 @@
  * Server event router for canonical GlassVein control messages.
  *
  * Breaking wire contract: only `type="control"` plus `subtype` is accepted for
- * control dispatch. Legacy direct commands, `control.command`, permission, and
+ * control dispatch. Legacy direct command wrappers, permission, and
  * question control routes are intentionally not supported here.
  */
 

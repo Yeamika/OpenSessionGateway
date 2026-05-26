@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GlassVein Mailbox Endpoint</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header><div><p>GlassVein endpoint</p><h1>Mailbox Endpoint</h1></div><strong id="status">ready</strong></header>
+  <main>
+    <section class="card wide">
+      <h2>Send Mail</h2>
+      <div class="grid">
+        <label>Caller runtime<input id="callerRuntime" placeholder="optional"></label>
+        <label>Caller session<input id="callerSession" value="caller-a"></label>
+        <label>Target runtime<input id="targetRuntime" value="runtime-a"></label>
+        <label>Target session<input id="targetSession" value="session-a"></label>
+        <label>Title<input id="title" value="Hello"></label>
+        <label>Type<select id="type"><option>Notice</option><option>NeedReplay</option></select></label>
+      </div>
+      <label>Message<textarea id="msg" rows="4">Mailbox message</textarea></label>
+      <button id="send">Send</button><button id="list" class="secondary">List target</button><p id="error"></p>
+    </section>
+    <section class="card wide"><h2>Status</h2><pre id="state">{}</pre></section>
+    <section class="card wide"><h2>Mailbox Items</h2><ol id="items"></ol></section>
+  </main>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

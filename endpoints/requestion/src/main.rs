@@ -178,7 +178,7 @@ async fn main() -> Result<()> {
                 if !should_continue { break; }
             }
             Some(outbound) = outbound_rx.recv() => {
-                let text = serde_json::to_string(&LinkMessage::Envelope(outbound.envelope))?;
+                let text = serde_json::to_string(&LinkMessage::TypedEnvelope(outbound.envelope))?;
                 writer.send(Message::Text(text.into())).await?;
                 info!(subtype = "requestion_respond", "sent outbound control");
             }
@@ -251,7 +251,7 @@ async fn handle_router_message(
             let _ = writer.send(Message::Text(pong.into())).await;
         }
         _ => {
-            debug!(kind = ?std::mem::discriminant(&link_msg), "ignoring message");
+            debug!(message_variant = ?std::mem::discriminant(&link_msg), "ignoring message");
         }
     }
     Ok(true)
