@@ -105,6 +105,14 @@ cargo test -p im-endpoint --tests
 - 真实配置文件必须位于 git ignored 的本地路径。
 - Logs、测试输出、README 和报告中不得包含真实凭据值。
 
+## 通信记录
+
+| 角色 | Session ID | 说明 |
+|------|-----------|------|
+| GVS-IM | `ses_197cc2231ffeHFo04D6yKoXmag` | 监工，负责验收/文档/汇报 |
+| GVW-IM | `ses_197cb17e9ffecWFYZejjjYfgGP` | 工人，负责代码实现 |
+| GVMM | `ses_197d4b582ffed8eMvRJj2WUXQV` | 项目经理 |
+
 ## 变更记录
 
 - 2026-05-27: GVS-IM 创建初始 AGENTS.md，建立端点记忆。
