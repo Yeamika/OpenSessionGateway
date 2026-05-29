@@ -105,12 +105,21 @@ cleanup_pids() {
     info "Cleanup done"
 }
 
-# ── Setup log dir and register cleanup trap ──
+# ── Setup log dir (no auto-cleanup trap) ──
+# By default, processes are left running after a stage completes so that
+# downstream stages can use them.  Call cleanup_pids explicitly on failure
+# or use demos/multiprocess/scripts/cleanup.sh to stop all demo processes.
 setup_stage() {
     mkdir -p "$LOG_DIR"
     init_pid_tracking "$LOG_DIR"
-    trap cleanup_pids EXIT
     info "Stage log dir: $LOG_DIR"
+}
+
+# ── Register cleanup trap on failure only ──
+# Usage: call after setup_stage.  If the script exits with non-zero,
+# all tracked PIDs are killed.  On success (exit 0), processes stay alive.
+cleanup_on_failure() {
+    trap 'if [ $? -ne 0 ]; then cleanup_pids; fi' EXIT
 }
 
 # ── Require a binary to exist ──
