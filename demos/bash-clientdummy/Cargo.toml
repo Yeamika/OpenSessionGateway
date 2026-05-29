@@ -1,0 +1,23 @@
+[package]
+name = "bash-clientdummy"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+description = "Bash/stdin-driven dummy runtime client for multi-process OSGP demos"
+
+[[bin]]
+name = "bash-clientdummy"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+osgp.workspace = true
+osgp-client.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread", "sync", "time", "io-std"] }
+tokio-tungstenite.workspace = true
+tracing.workspace = true
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+uuid.workspace = true

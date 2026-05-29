@@ -17,6 +17,7 @@ members = [
   "endpoints/session-control",  # session-control-endpoint
   "endpoints/mailbox",          # mailbox-endpoint
   "endpoints/im",                 # im-endpoint
+  "endpoints/timer",              # timer-endpoint
 
   # ── Surface library ──
   "crates/surface",
@@ -25,6 +26,7 @@ members = [
   "demos/alpha-client",
   "demos/beta-client",
   "demos/gamma-client",
+  "demos/bash-clientdummy",
   "demos",
 ]
 
@@ -43,6 +45,7 @@ futures-util = "0.3"
 tokio-tungstenite = { version = "0.28", features = ["connect", "rustls-tls-webpki-roots"] }
 tracing = "0.1"
 uuid = { version = "1.19", features = ["v4", "serde"] }
+tempfile = "3"
 
 # ── Workspace path deps ──
 osgp = { path = "osgp/rust" }
