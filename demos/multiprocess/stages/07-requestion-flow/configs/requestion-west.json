@@ -1,0 +1,9 @@
+{
+  "nodeId": "requestion-endpoint",
+  "routerUrl": "ws://127.0.0.1:7202",
+  "address": "domain-a/requestion-endpoint/requestion-endpoint",
+  "webAddr": "127.0.0.1:7318",
+  "noWeb": false,
+  "seedDemo": false,
+  "legacyHello": false
+}

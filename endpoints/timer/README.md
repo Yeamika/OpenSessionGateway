@@ -90,6 +90,17 @@ Create/delete operations map to OSGP `control` envelopes; list operations map to
 
 ## Manual validation
 
+Timer/session demo sequence:
+
+- [`demo/README.md`](demo/README.md) defines the target-session-owned timer demo.
+- In that demo, the target session must create the one-shot timer itself through
+  the Timer MCP surface; external test harness creation is not acceptable.
+- When the timer fires, the Timer endpoint must send canonical
+  `control/add_prompt` to the same target session and prove busy → reply → idle
+  timing with no duplicate one-shot fire.
+
+General local checks:
+
 ```sh
 cd GlassVein
 find endpoints/timer -type f -print0 | xargs -0 wc -l

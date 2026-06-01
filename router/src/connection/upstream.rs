@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
-use osgp::{HelloMessage, LinkMessage, Role, SessionAddress};
+use osgp::{LinkMessage, SessionAddress};
 use tokio::sync::mpsc;
 use tokio_tungstenite::connect_async;
 use tracing::{info, warn};
@@ -13,6 +13,32 @@ use crate::transport::{PeerRole, UpstreamHandle};
 use super::config::UpstreamConfig;
 use super::link_io::{self, WireFrame};
 use super::ConnectionManager;
+
+/// Build a legacy HelloMessage for sending to upstream.
+/// Isolated here to contain `#[allow(deprecated)]`.
+#[allow(deprecated)]
+fn make_upstream_hello(
+    node_id: &str,
+    announce_routes: &[SessionAddress],
+) -> osgp::HelloMessage {
+    osgp::HelloMessage {
+        node_id: node_id.to_string(),
+        role: osgp::Role::Router,
+        addresses: announce_routes.to_vec(),
+        capabilities: Vec::new(),
+    }
+}
+
+/// Parse a reply frame as LinkHandshake or legacy HelloMessage.
+/// Returns the upstream node_id.
+#[allow(deprecated)]
+fn parse_upstream_reply(text: &str) -> anyhow::Result<String> {
+    if let Ok(hs) = serde_json::from_str::<osgp::LinkHandshake>(text) {
+        return Ok(hs.peer_id);
+    }
+    let reply: osgp::HelloMessage = serde_json::from_str(text).context("parse Hello reply")?;
+    Ok(reply.node_id)
+}
 
 impl ConnectionManager {
     /// Connect to the upstream (parent) router.
@@ -60,13 +86,8 @@ impl ConnectionManager {
         let (mut sink, mut reader) = link_io::split_tungstenite_ws(ws);
         let (tx, mut rx) = mpsc::unbounded_channel::<LinkMessage>();
 
-        // Send Hello
-        let hello = HelloMessage {
-            node_id: self.node_id.clone(),
-            role: Role::Router,
-            addresses: announce_routes.to_vec(),
-            capabilities: Vec::new(),
-        };
+        // Send Hello (legacy format for backward compat)
+        let hello = make_upstream_hello(&self.node_id, announce_routes);
         let hello_frame = WireFrame::from_json(&hello)?;
         sink.send_frame(hello_frame)
             .await
@@ -79,10 +100,7 @@ impl ConnectionManager {
             .ok_or_else(|| anyhow::anyhow!("upstream closed before Hello reply"))?
             .context("read Hello reply frame")?;
 
-        let reply: HelloMessage =
-            serde_json::from_str(reply_frame.as_text()).context("parse Hello reply")?;
-
-        let upstream_id = reply.node_id.clone();
+        let upstream_id = parse_upstream_reply(reply_frame.as_text())?;
         info!(
             router = %self.node_id,
             upstream = %upstream_id,
@@ -99,19 +117,22 @@ impl ConnectionManager {
         });
 
         // Learn routes from upstream's Hello reply.
-        // Dispatch as Announce messages so they go through the normal route
-        // learning path (on_message callback → learn_route → route_table update).
-        // This ensures upstream addresses enter the route table, not just peer_routes.
-        for addr in reply.addresses {
-            self.dispatch_message(
-                &upstream_id,
-                &PeerRole::Router,
-                LinkMessage::Announce {
-                    address: addr,
-                    distance: 1,
-                },
-            )
-            .await;
+        // Try to parse as HelloMessage to extract addresses (LinkHandshake
+        // doesn't carry addresses, so skip if it's the new format).
+        #[allow(deprecated)]
+        if let Ok(hello_reply) = serde_json::from_str::<osgp::HelloMessage>(reply_frame.as_text())
+        {
+            for addr in hello_reply.addresses {
+                self.dispatch_message(
+                    &upstream_id,
+                    &PeerRole::Router,
+                    LinkMessage::Announce {
+                        address: addr,
+                        distance: 1,
+                    },
+                )
+                .await;
+            }
         }
 
         // Read loop

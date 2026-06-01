@@ -20,6 +20,7 @@ fn config() -> CliConfig {
         no_web: false,
         config_path: None,
         seed_demo: false,
+        legacy_hello: false,
     }
 }
 
@@ -31,7 +32,7 @@ async fn context_with_one() -> (WebContext, mpsc::Receiver<OutboundControl>) {
         "req-a".into(),
         "Approve A".into(),
         addr("runtime-a", "ses-a"),
-        "requestion.asked".into(),
+        "requestion_asked".into(),
         json!({"sessionID":"ses-a","requestID":"req-a"}),
     );
     let (tx, rx) = mpsc::channel(4);

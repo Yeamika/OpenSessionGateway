@@ -22,6 +22,9 @@ pub struct Config {
     pub smoke_duration: Duration,
     pub command: String,
     pub message: String,
+    /// 显式启用 admin write 操作（route_add/route_remove/rule_remove）。
+    /// 默认 false，需要 operator 通过 --enable-admin-write 显式授权。
+    pub enable_admin_write: bool,
 }
 
 pub fn parse_args() -> Result<Config> {
@@ -35,6 +38,7 @@ pub fn parse_args() -> Result<Config> {
         smoke_duration: Duration::from_millis(1500),
         command: "runtime_session_view_snapshot".into(),
         message: String::new(),
+        enable_admin_write: false, // 默认禁用 admin write
     };
     let mut args = env::args().skip(1).peekable();
     while let Some(arg) = args.next() {
@@ -56,6 +60,7 @@ pub fn parse_args() -> Result<Config> {
             }
             "--command" => cfg.command = normalize_command(&take(&mut args, "--command")?),
             "--message" => cfg.message = take(&mut args, "--message")?,
+            "--enable-admin-write" => cfg.enable_admin_write = true,
             "-h" | "--help" => {
                 print_help();
                 std::process::exit(0);
@@ -108,6 +113,9 @@ fn apply_config(cfg: &mut Config, path: &str) -> Result<()> {
     if let Some(v) = value.get("message").and_then(Value::as_str) {
         cfg.message = v.into();
     }
+    if let Some(v) = value.get("enableAdminWrite").and_then(Value::as_bool) {
+        cfg.enable_admin_write = v;
+    }
     Ok(())
 }
 
@@ -151,6 +159,13 @@ fn print_help() {
     println!("Usage: console-endpoint [--config file] [--once|--command-mode] [OPTIONS]\n\
 Options: --router-url <ws> --node-id <id> --address <d/r/s> --target <d/r/s>\n\
          --command <cmd> --message <text> --refresh-interval-ms <ms>\n\
+         --enable-admin-write   Enable admin write operations (route_add/route_remove/rule_remove)\n\
+                                Default: disabled. Requires explicit operator authorization.\n\
 Commands: abort_session resume_session compact_session add_prompt rename_session create_session\n\
-Requests: runtime_session_view_snapshot runtime_session_messages runtime_workspace_view_snapshot runtime_requestion_snapshot");
+Requests: runtime_session_view_snapshot runtime_session_messages runtime_workspace_view_snapshot runtime_requestion_snapshot\n\
+Admin (read-only, always available):\n\
+          admin_route_list admin_route_list_manual admin_rule_list admin_revision\n\
+Admin (write, requires --enable-admin-write):\n\
+          admin_route_add admin_route_remove admin_rule_remove\n\
+          (use --command admin_route_list etc. in command mode)");
 }

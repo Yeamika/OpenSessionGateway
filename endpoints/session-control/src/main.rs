@@ -2,6 +2,7 @@ mod api;
 mod cli;
 mod config;
 mod gv_client;
+mod link_handshake;
 mod mcp;
 mod session_tools;
 mod state;

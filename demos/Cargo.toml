@@ -18,10 +18,6 @@ path = "control-demo.rs"
 name = "ws-client-demo"
 path = "ws-client-demo.rs"
 
-[[bin]]
-name = "gv-network-validation"
-path = "gv-network-validation.rs"
-
 [dependencies]
 anyhow.workspace = true
 osgp-client.workspace = true

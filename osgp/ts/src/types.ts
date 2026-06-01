@@ -14,6 +14,15 @@
  * - `subtype` is the canonical business-level discriminator within each type.
  */
 
+import type {
+  ControlSubtype as RegistryControlSubtype,
+  OsgpSubtype as RegistryOsgpSubtype,
+  OsgpType as RegistryOsgpType,
+  RequestSubtype as RegistryRequestSubtype,
+  ResponseSubtype as RegistryResponseSubtype,
+  UploadSubtype as RegistryUploadSubtype,
+} from "./subtype-registry.js";
+
 // ── Primitive aliases ────────────────────────────────────────────────
 
 /** A domain string (e.g. `"domain-a"`). */
@@ -38,67 +47,25 @@ export type Uuid = string;
  *
  * Maps directly to `linkType` on the wire.
  */
-export type OsgpType = "upload" | "control" | "request" | "response";
+export type OsgpType = RegistryOsgpType;
 
 /** Upload subtypes — fan-out events from router to observers. */
-export type UploadSubtype =
-  | "session_update"
-  | "requestion_asked"
-  | "requestion_resolved"
-  | "requestion_updated"
-  | "requestion_cancelled";
+export type UploadSubtype = RegistryUploadSubtype;
 
 /** Control subtypes — commands from surface to router. */
-export type ControlSubtype =
-  | "add_prompt"
-  | "abort_session"
-  | "compact_session"
-  | "create_session"
-  | "rename_session"
-  | "resume_session"
-  | "requestion_respond";
+export type ControlSubtype = RegistryControlSubtype;
 
-/** Request subtypes — read/query operations from surface to router (canonical P-request). */
-export type RequestSubtype =
-  | "runtime_workspace_view_snapshot"
-  | "runtime_requestion_snapshot"
-  | "runtime_session_view_snapshot"
-  | "runtime_session_messages";
+/** Request subtypes — read/query operations from surface to router. */
+export type RequestSubtype = RegistryRequestSubtype;
 
 /**
- * Response subtypes mirror the request/control subtype they answer.
- * Represented as string to allow arbitrary response echoes.
+ * Response subtypes mirror request + control subtypes.
+ * No new subtypes are defined for responses.
  */
-export type ResponseSubtype = string;
+export type ResponseSubtype = RegistryResponseSubtype;
 
 /** Union of all canonical subtypes. */
-export type OsgpSubtype = UploadSubtype | ControlSubtype | RequestSubtype | ResponseSubtype;
-
-/** Complete subtype list for runtime lookup. */
-export const UPLOAD_SUBTYPES: readonly UploadSubtype[] = [
-  "session_update",
-  "requestion_asked",
-  "requestion_resolved",
-  "requestion_updated",
-  "requestion_cancelled",
-];
-
-export const CONTROL_SUBTYPES: readonly ControlSubtype[] = [
-  "add_prompt",
-  "abort_session",
-  "compact_session",
-  "create_session",
-  "rename_session",
-  "resume_session",
-  "requestion_respond",
-];
-
-export const REQUEST_SUBTYPES: readonly RequestSubtype[] = [
-  "runtime_workspace_view_snapshot",
-  "runtime_requestion_snapshot",
-  "runtime_session_view_snapshot",
-  "runtime_session_messages",
-];
+export type OsgpSubtype = RegistryOsgpSubtype;
 
 // ── Session address ──────────────────────────────────────────────────
 

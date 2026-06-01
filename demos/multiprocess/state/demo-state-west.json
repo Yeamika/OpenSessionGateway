@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "node_id": "west-router",
+  "updated_at": "0",
+  "route_revision": 0,
+  "rule_revision": 0,
+  "permission_revision": 0,
+  "manual_routes": [
+    { "address": "domain-a/*", "neighbor": "root-router", "distance": 1 },
+    { "address": "east/*", "neighbor": "root-router", "distance": 1 },
+    { "address": "nested/*", "neighbor": "nested-router", "distance": 1 }
+  ],
+  "rules": [],
+  "persistent_grants": [
+    { "peer_id": "beta-client", "op": "announce_route", "kind": "persist" },
+    { "peer_id": "requestion-endpoint", "op": "announce_route", "kind": "persist" },
+    { "peer_id": "mailbox-endpoint", "op": "announce_route", "kind": "persist" },
+    { "peer_id": "mailbox-endpoint", "op": "control_add_prompt", "kind": "persist" }
+  ],
+  "audit_log": []
+}

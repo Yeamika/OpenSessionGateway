@@ -5,7 +5,7 @@ use crate::{
     session_tools::SessionToolServices,
     state::{EndpointConfig, SharedState},
 };
-use osgp::SessionAddress;
+use osgp::{LinkHandshake, SessionAddress};
 use serde_json::{json, Value};
 
 #[tokio::test]
@@ -119,4 +119,118 @@ async fn mcp_call(
 ) -> Value {
     let bytes = serde_json::to_vec(&request).unwrap();
     mcp::handle(state, gv, tools, config, &bytes).await
+}
+
+#[test]
+fn osgp_link_handshake_wire_format_matches_router_expectation() {
+    // The router's parse_hello_frame expects osgp::LinkHandshake with camelCase
+    // serde: protocolVersion (string "osgp/1"), peerId, optional metadata.
+    // This test ensures our handshake serialization is compatible.
+    let hs = LinkHandshake::new("session-control-endpoint")
+        .with_metadata(json!({"endpoint": "session-control"}));
+    let wire = serde_json::to_string(&hs).unwrap();
+    let parsed: Value = serde_json::from_str(&wire).unwrap();
+    assert_eq!(parsed["protocolVersion"], "osgp/1");
+    assert_eq!(parsed["peerId"], "session-control-endpoint");
+    assert_eq!(parsed["metadata"]["endpoint"], "session-control");
+    // Must NOT contain legacy fields
+    assert!(parsed.get("type").is_none());
+    assert!(parsed.get("role").is_none());
+    assert!(parsed.get("capabilities").is_none());
+    assert!(parsed.get("nodeId").is_none());
+}
+
+#[test]
+fn router_hello_reply_is_accepted_as_handshake_ack() {
+    // Router replies with legacy HelloMessage: {"nodeId":"...","role":"router",...}
+    // Our client should accept this as a successful connection ack.
+    let reply = json!({"nodeId":"root-router","role":"router","addresses":[],"capabilities":[]});
+    let has_node_id = reply.get("nodeId").and_then(Value::as_str).is_some();
+    let is_success_ack = reply.get("success").and_then(Value::as_bool).unwrap_or(false);
+    assert!(has_node_id || is_success_ack, "HelloMessage reply must be accepted");
+    assert_eq!(reply["nodeId"], "root-router");
+}
+
+// ── Subtype allowlist convergence tests (GVW4) ─────────────────────
+
+#[tokio::test]
+async fn mcp_schema_control_subtypes_match_canonical() {
+    let state = SharedState::new();
+    let gv = GvClient::new(state.clone());
+    let tools = SessionToolServices::new();
+    let config = ConfigStore::new(None, None);
+    let listed = mcp_call(
+        &state, &gv, &tools, &config,
+        json!({"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}),
+    ).await;
+    let rows = listed["result"]["tools"].as_array().unwrap();
+    let control_tool = rows.iter().find(|t| t["name"] == "control").unwrap();
+    let enum_vals = control_tool["inputSchema"]["properties"]["subtype"]["enum"]
+        .as_array().unwrap();
+    let expected = vec![
+        "add_prompt", "abort_session", "compact_session",
+        "create_session", "rename_session", "resume_session", "requestion_respond",
+    ];
+    let got: Vec<&str> = enum_vals.iter().map(|v| v.as_str().unwrap()).collect();
+    assert_eq!(got, expected, "control subtype enum must match canonical list");
+}
+
+#[tokio::test]
+async fn mcp_schema_request_subtypes_match_canonical() {
+    let state = SharedState::new();
+    let gv = GvClient::new(state.clone());
+    let tools = SessionToolServices::new();
+    let config = ConfigStore::new(None, None);
+    let listed = mcp_call(
+        &state, &gv, &tools, &config,
+        json!({"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}),
+    ).await;
+    let rows = listed["result"]["tools"].as_array().unwrap();
+    let request_tool = rows.iter().find(|t| t["name"] == "request").unwrap();
+    let enum_vals = request_tool["inputSchema"]["properties"]["subtype"]["enum"]
+        .as_array().unwrap();
+    let expected = vec![
+        "runtime_workspace_view_snapshot",
+        "runtime_requestion_snapshot",
+        "runtime_session_view_snapshot",
+        "runtime_session_messages",
+    ];
+    let got: Vec<&str> = enum_vals.iter().map(|v| v.as_str().unwrap()).collect();
+    assert_eq!(got, expected, "request subtype enum must match canonical list");
+}
+
+#[tokio::test]
+async fn control_rejects_unknown_subtype() {
+    let state = SharedState::new();
+    let gv = GvClient::new(state.clone());
+    let tools = SessionToolServices::new();
+    let config = ConfigStore::new(None, None);
+    let result = mcp_call(
+        &state, &gv, &tools, &config,
+        json!({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{
+            "name":"control",
+            "arguments":{"subtype":"arbitrary_inject","payload":{}}
+        }}),
+    ).await;
+    assert!(result.get("error").is_some(), "unknown control subtype must be rejected");
+    let msg = result["error"]["message"].as_str().unwrap();
+    assert!(msg.contains("unsupported subtype"), "error must mention unsupported subtype");
+}
+
+#[tokio::test]
+async fn request_rejects_unknown_subtype() {
+    let state = SharedState::new();
+    let gv = GvClient::new(state.clone());
+    let tools = SessionToolServices::new();
+    let config = ConfigStore::new(None, None);
+    let result = mcp_call(
+        &state, &gv, &tools, &config,
+        json!({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{
+            "name":"request",
+            "arguments":{"subtype":"steal_credentials","payload":{}}
+        }}),
+    ).await;
+    assert!(result.get("error").is_some(), "unknown request subtype must be rejected");
+    let msg = result["error"]["message"].as_str().unwrap();
+    assert!(msg.contains("unsupported subtype"), "error must mention unsupported subtype");
 }

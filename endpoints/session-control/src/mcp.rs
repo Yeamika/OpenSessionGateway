@@ -86,8 +86,8 @@ fn list_tools() -> Value {
         json!({ "name": "state", "inputSchema": empty_schema() }),
         json!({ "name": "connect", "inputSchema": connect_schema() }),
         json!({ "name": "disconnect", "inputSchema": empty_schema() }),
-        json!({ "name": "request", "inputSchema": send_schema(&["runtime_session_view_snapshot", "runtime_session_messages"]) }),
-        json!({ "name": "control", "inputSchema": send_schema(&["add_prompt", "abort_session", "compact_session", "create_session", "rename_session", "resume_session"]) }),
+        json!({ "name": "request", "inputSchema": send_schema(&["runtime_workspace_view_snapshot", "runtime_requestion_snapshot", "runtime_session_view_snapshot", "runtime_session_messages"]) }),
+        json!({ "name": "control", "inputSchema": send_schema(&["add_prompt", "abort_session", "compact_session", "create_session", "rename_session", "resume_session", "requestion_respond"]) }),
         json!({ "name": "ReloadConfig", "inputSchema": empty_schema() }),
     ];
     tools.extend(session_tool_names().iter().map(|name| {

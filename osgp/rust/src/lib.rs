@@ -15,6 +15,7 @@ pub mod hello;
 pub mod link_type;
 pub mod payload;
 pub mod read;
+pub mod subtype_registry;
 pub mod validation;
 
 #[cfg(test)]
@@ -24,7 +25,8 @@ mod tests;
 
 pub use address::{BroadcastScope, NodeId, RouteTarget, SessionAddress, SessionId};
 pub use envelope::{Envelope, LinkMessage, SessionEnvelope};
-pub use hello::{HelloMessage, Role};
+#[allow(deprecated)]
+pub use hello::{HandshakeKind, HelloMessage, LinkHandshake, Role};
 pub use link_type::LinkType;
 pub use payload::{
     Payload, PromptRole, SessionCommand, SessionCommandKind, SessionState, SessionUpdate,

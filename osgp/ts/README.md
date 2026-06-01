@@ -53,32 +53,35 @@ After Hello, all subsequent frames are OSGP `Envelope` objects:
 
 #### Canonical `linkType` / `subtype` values
 
+The canonical registry mirrors Rust `osgp::subtype_registry` and is exported
+from `src/subtype-registry.ts` via helpers such as `canonicalSubtypesFor()`,
+`isCanonical()`, `validateCanonical()`, and `normalizeSubtype()`.
+
 | `linkType`  | Description                        | Has business `target`? |
 |-------------|------------------------------------|------------------------|
 | `upload`    | Fan-out data (session_update, requestion, etc.) | **No** — upload is broadcast to subscribers |
 | `control`   | Commands (add_prompt, abort_session, etc.) | **Yes** — must include `target` |
 | `request`   | Read/query operations              | **Yes** — must include `target` |
-| `response`  | Reply to a request or control      | **Yes** — includes `messageId` for correlation |
+| `response`  | Reply to a request or control      | **Yes** — subtype must mirror request/control |
 
-Common `subtype` values:
+Canonical `subtype` values:
 
-| subtype                   | linkType   | Meaning                                  |
-|---------------------------|------------|------------------------------------------|
-| `session_update`          | `upload`   | Session state change notification        |
-| `requestion_asked`        | `upload`   | Requestion entered "asked" state         |
-| `requestion_resolved`     | `upload`   | Requestion resolved                      |
-| `requestion_updated`      | `upload`   | Requestion state updated                 |
-| `requestion_cancelled`    | `upload`   | Requestion cancelled                     |
-| `add_prompt`              | `control`  | Add a prompt/message to a session        |
-| `abort_session`           | `control`  | Abort a session                          |
-| `compact_session`         | `control`  | Compact session context                  |
-| `create_session`          | `control`  | Create a new session                     |
-| `rename_session`          | `control`  | Rename a session                         |
-| `requestion_respond`                      | `control`  | Respond to a requestion                          |
-| `runtime_workspace_view_snapshot`         | `request`  | Read workspace tree or specific workspace info   |
-| `runtime_requestion_snapshot`             | `request`  | Read pending requestions for a runtime           |
-| `runtime_session_view_snapshot`           | `request`  | Read session state snapshot                      |
-| `runtime_session_messages`                | `request`  | Read session message timeline                    |
+| `linkType` | Canonical subtypes |
+|------------|--------------------|
+| `upload` | `session_update`, `requestion_asked`, `requestion_updated`, `requestion_resolved`, `requestion_cancelled` |
+| `control` | `add_prompt`, `abort_session`, `compact_session`, `create_session`, `rename_session`, `resume_session`, `requestion_respond` |
+| `request` | `runtime_workspace_view_snapshot`, `runtime_requestion_snapshot`, `runtime_session_view_snapshot`, `runtime_session_messages` |
+| `response` | Mirrors `request` + `control` only; response does not define independent subtypes. |
+
+Compat request aliases such as `list_workspaces` are **not canonical**. If you
+need legacy decode compatibility, normalize explicitly:
+
+```typescript
+import { isCanonical, normalizeSubtype } from "@opensessiongateway/osgp"
+
+isCanonical("request", "list_workspaces") // false
+normalizeSubtype("request", "list_workspaces") // "runtime_workspace_view_snapshot"
+```
 
 ## Usage examples
 
@@ -220,6 +223,10 @@ Older GlassVein code used a flat `kind` field (e.g. `"kind": "add_prompt"`) or a
 | `session_update_subscribe`           | `request`      | `runtime_session_view_snapshot`   |
 
 If you have existing TypeScript code using `SessionEnvelope` with a `kind` or `type` field, migrate to `OsgpEnvelope` with `linkType` and `subtype`.
+The legacy request rows above are compat aliases only: `isCanonical()` and the
+envelope guards reject them until callers explicitly map them through
+`normalizeSubtype("request", oldSubtype)` (or `"response"` for mirrored legacy
+responses).
 
 ## License
 

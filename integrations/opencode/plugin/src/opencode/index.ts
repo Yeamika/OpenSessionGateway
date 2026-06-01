@@ -81,6 +81,13 @@ export {
   readEnabledMcpMetadata,
 } from "./runtime/mcp.js"
 export type { LoadedMcpMetadata, OsgMcpSurfaceDescriptor } from "./runtime/mcp.js"
+export {
+  buildInternalRouterArgs,
+  ensureInternalRouter,
+  resolveGlassVeinRouterBinary,
+  stopInternalRouter,
+} from "./runtime/internal-router.js"
+export type { InternalRouterStartResult } from "./runtime/internal-router.js"
 
 // Config
 export {
@@ -89,8 +96,9 @@ export {
   readVeinEnvOverrides,
   writeVeinConfig,
   resolveVeinConfigPath,
+  readInternalRouterEnvOverrides,
 } from "./runtime/config.js"
-export type { VeinRuntimeConfig, VeinRuntimeConfigPatch } from "./runtime/config.js"
+export type { VeinRuntimeConfig, VeinRuntimeConfigPatch, InternalRouterRuntimeConfig } from "./runtime/config.js"
 
 // Constants
 export {

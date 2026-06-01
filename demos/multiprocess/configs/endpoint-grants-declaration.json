@@ -1,0 +1,92 @@
+{
+  "version": 1,
+  "description": "Declared grant requirements for all 6 demo endpoints (serde snake_case PermissionOps). Not applied to router state — use for reference when selecting state files.",
+  "state_file_basis": "demo-state-*.json (in demos/multiprocess/state/)",
+  "endpoints": [
+    {
+      "endpoint": "console-endpoint",
+      "connects_to": "root-router",
+      "router_url": "ws://127.0.0.1:7200",
+      "announces": false,
+      "notes": "LinkHandshake only; no Announce. Admin write disabled by default (--enable-admin-write flag required).",
+      "grants": [
+        "admin_routes_read",
+        "admin_rules_read",
+        "observe_session_update",
+        "read_runtime_session_messages",
+        "control_add_prompt"
+      ],
+      "state_file_has": ["announce_route", "admin_routes_read", "admin_rules_read", "observe_session_update", "read_runtime_session_messages", "control_add_prompt"],
+      "state_file_also_has_admin_write": ["admin_routes_write", "admin_rules_write"],
+      "demo_uses_admin_write": false
+    },
+    {
+      "endpoint": "session-control-endpoint",
+      "connects_to": "east-router",
+      "router_url": "ws://127.0.0.1:7201",
+      "announces": false,
+      "notes": "LinkHandshake only; no Announce. State file pre-grants announce_route but endpoint does not send Announce.",
+      "grants": [
+        "control_add_prompt",
+        "observe_session_update",
+        "read_runtime_session_messages"
+      ],
+      "state_file_has": ["announce_route", "control_add_prompt", "observe_session_update", "read_runtime_session_messages"]
+    },
+    {
+      "endpoint": "timer-endpoint",
+      "connects_to": "east-router",
+      "router_url": "ws://127.0.0.1:7201",
+      "announces": true,
+      "announce_address": "east/timer-endpoint/timer",
+      "notes": "Sends Announce after LinkHandshake for source address.",
+      "grants": [
+        "announce_route",
+        "control_add_prompt"
+      ],
+      "state_file_has": ["announce_route", "control_add_prompt"]
+    },
+    {
+      "endpoint": "requestion-endpoint",
+      "connects_to": "west-router",
+      "router_url": "ws://127.0.0.1:7202",
+      "announces": true,
+      "announce_address": "west/requestion-endpoint/requestion-endpoint",
+      "notes": "Sends Announce after LinkHandshake. Needs route for ReadRequest delivery. Address aligned with topology.",
+      "grants": [
+        "announce_route"
+      ],
+      "state_file_has": ["announce_route"]
+    },
+    {
+      "endpoint": "mailbox-endpoint",
+      "connects_to": "west-router",
+      "router_url": "ws://127.0.0.1:7202",
+      "announces": true,
+      "announce_address": "west/mailbox-endpoint/mailbox",
+      "notes": "Sends Announce via --announce-address CLI. Receives delivery envelopes.",
+      "grants": [
+        "announce_route",
+        "control_add_prompt"
+      ],
+      "state_file_has": ["announce_route", "control_add_prompt"]
+    },
+    {
+      "endpoint": "im-endpoint",
+      "connects_to": "nested-router",
+      "router_url": "ws://127.0.0.1:7203",
+      "announces": true,
+      "announce_addresses": [
+        "nested/im-endpoint/im",
+        "nested/im-backend/im-session"
+      ],
+      "notes": "Sends Announce for both source and target addresses after LinkHandshake.",
+      "grants": [
+        "announce_route",
+        "control_add_prompt",
+        "read_runtime_session_messages"
+      ],
+      "state_file_has": ["announce_route", "control_add_prompt", "read_runtime_session_messages"]
+    }
+  ]
+}

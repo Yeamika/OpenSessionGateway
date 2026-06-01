@@ -4,6 +4,11 @@
 //! supports multi-path routing (multiple entries per address) and resolves
 //! the lowest-distance next-hop, optionally avoiding a specific neighbor
 //! (split horizon).
+//!
+//! Route entries carry an [`RouteOrigin`] tag so learned routes (from peer
+//! announcements) can be distinguished from manual routes (admin-inserted).
+//! `remove_neighbor` only removes learned routes; manual routes survive
+//! peer disconnect.
 
 #[cfg(test)]
 mod tests;
@@ -13,7 +18,7 @@ use std::collections::HashMap;
 
 use osgp::{SessionAddress, SessionEnvelope};
 
-pub use types::{ForwardDecision, NextHop, RouteAnnouncement};
+pub use types::{ForwardDecision, NextHop, RouteAnnouncement, RouteOrigin, RouteSnapshotEntry};
 use types::{RouteBucket, RouteEntry};
 
 // ── RouteTable ──────────────────────────────────────────────────────
@@ -27,6 +32,7 @@ use types::{RouteBucket, RouteEntry};
 #[derive(Debug, Default, Clone)]
 pub struct RouteTable {
     routes: HashMap<String, RouteBucket>,
+    revision: u64,
 }
 
 impl RouteTable {
@@ -34,10 +40,12 @@ impl RouteTable {
 
     /// Insert or update a route. Only updates if the new distance is
     /// strictly lower than the existing entry for the same neighbor.
+    /// Routes inserted via this method are marked as [`RouteOrigin::Learned`].
     pub fn upsert(&mut self, address: SessionAddress, neighbor: impl Into<String>, distance: u32) {
         let candidate = RouteEntry {
             neighbor: neighbor.into(),
             distance,
+            origin: RouteOrigin::Learned,
         };
         let key = address_key(&address);
         match self.routes.get(&key) {
@@ -54,6 +62,7 @@ impl RouteTable {
                         entries: vec![candidate],
                     },
                 );
+                self.bump_revision();
             }
         }
     }
@@ -64,7 +73,7 @@ impl RouteTable {
     /// table actually changed (new entry or updated distance).
     ///
     /// For session-level addresses, automatically creates a runtime-level
-    /// fallback entry as well.
+    /// fallback entry as well. Entries are marked as [`RouteOrigin::Learned`].
     pub fn upsert_announcement(
         &mut self,
         announcement: &RouteAnnouncement,
@@ -76,6 +85,7 @@ impl RouteTable {
             RouteEntry {
                 neighbor: neighbor.clone(),
                 distance: announcement.distance.saturating_add(1),
+                origin: RouteOrigin::Learned,
             },
         );
 
@@ -91,10 +101,14 @@ impl RouteTable {
                 RouteEntry {
                     neighbor,
                     distance: announcement.distance.saturating_add(1),
+                    origin: RouteOrigin::Learned,
                 },
             );
         }
 
+        if changed {
+            self.bump_revision();
+        }
         changed
     }
 
@@ -108,7 +122,7 @@ impl RouteTable {
         if let Some(existing) = bucket
             .entries
             .iter_mut()
-            .find(|e| e.neighbor == entry.neighbor)
+            .find(|e| e.neighbor == entry.neighbor && e.origin == entry.origin)
         {
             if existing.distance == entry.distance {
                 return false;
@@ -121,17 +135,110 @@ impl RouteTable {
         }
     }
 
+    // ── Manual route management (admin plane) ──────────────────────
+
+    /// Insert a manual route. Returns `true` if the table changed.
+    pub fn insert_manual(
+        &mut self,
+        address: SessionAddress,
+        neighbor: impl Into<String>,
+        distance: u32,
+    ) -> bool {
+        let changed = self.upsert_entry(
+            address,
+            RouteEntry {
+                neighbor: neighbor.into(),
+                distance,
+                origin: RouteOrigin::Manual,
+            },
+        );
+        if changed {
+            self.bump_revision();
+        }
+        changed
+    }
+
+    /// Remove a specific manual route entry. Returns `true` if removed.
+    pub fn remove_manual(
+        &mut self,
+        address: &SessionAddress,
+        neighbor: &str,
+    ) -> bool {
+        let key = address_key(address);
+        let mut changed = false;
+        if let Some(bucket) = self.routes.get_mut(&key) {
+            let before = bucket.entries.len();
+            bucket
+                .entries
+                .retain(|e| !(e.neighbor == neighbor && e.origin == RouteOrigin::Manual));
+            changed = bucket.entries.len() != before;
+            if bucket.entries.is_empty() {
+                self.routes.remove(&key);
+            }
+        }
+        if changed {
+            self.bump_revision();
+        }
+        changed
+    }
+
     // ── Remove routes ──────────────────────────────────────────────
 
-    /// Remove all routes learned from a specific neighbor. Returns `true`
-    /// if any entries were actually removed.
+    /// Remove all **learned** routes from a specific neighbor.
+    /// Manual routes for this neighbor are preserved.
+    /// Returns `true` if any entries were actually removed.
     pub fn remove_neighbor(&mut self, neighbor_id: &str) -> bool {
         let before = self.entry_count();
         self.routes.retain(|_, bucket| {
-            bucket.entries.retain(|e| e.neighbor != neighbor_id);
+            bucket
+                .entries
+                .retain(|e| !(e.neighbor == neighbor_id && e.origin == RouteOrigin::Learned));
             !bucket.entries.is_empty()
         });
-        before != self.entry_count()
+        let changed = before != self.entry_count();
+        if changed {
+            self.bump_revision();
+        }
+        changed
+    }
+
+    // ── Semantic list (admin plane) ────────────────────────────────
+
+    /// Snapshot all routes with origin metadata.
+    pub fn list_all(&self) -> Vec<RouteSnapshotEntry> {
+        let mut result = Vec::new();
+        for bucket in self.routes.values() {
+            for entry in &bucket.entries {
+                result.push(RouteSnapshotEntry {
+                    address: bucket.address.clone(),
+                    neighbor: entry.neighbor.clone(),
+                    distance: entry.distance,
+                    origin: entry.origin,
+                });
+            }
+        }
+        result.sort_by(|a, b| {
+            address_key(&a.address)
+                .cmp(&address_key(&b.address))
+                .then(a.neighbor.cmp(&b.neighbor))
+        });
+        result
+    }
+
+    /// Snapshot routes for a specific neighbor.
+    pub fn list_by_neighbor(&self, neighbor: &str) -> Vec<RouteSnapshotEntry> {
+        self.list_all()
+            .into_iter()
+            .filter(|e| e.neighbor == neighbor)
+            .collect()
+    }
+
+    /// Snapshot only manual routes.
+    pub fn list_manual(&self) -> Vec<RouteSnapshotEntry> {
+        self.list_all()
+            .into_iter()
+            .filter(|e| e.origin == RouteOrigin::Manual)
+            .collect()
     }
 
     // ── Resolve ────────────────────────────────────────────────────
@@ -225,6 +332,17 @@ impl RouteTable {
             .collect();
         rows.sort_by(|a, b| a.0.cmp(&b.0));
         rows
+    }
+
+    // ── Revision ───────────────────────────────────────────────────
+
+    /// Current revision counter. Bumped on every mutation.
+    pub fn revision(&self) -> u64 {
+        self.revision
+    }
+
+    fn bump_revision(&mut self) {
+        self.revision = self.revision.wrapping_add(1);
     }
 
     fn entry_count(&self) -> usize {

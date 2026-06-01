@@ -1,0 +1,8 @@
+{
+  "listen": "127.0.0.1:7311",
+  "router_url": "ws://127.0.0.1:7202",
+  "peer_id": "mailbox-endpoint",
+  "announce_addresses": [
+    "west/mailbox-endpoint/mailbox"
+  ]
+}

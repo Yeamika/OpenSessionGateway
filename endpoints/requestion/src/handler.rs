@@ -38,8 +38,9 @@ const RESPONSE_SUBTYPE: &str = "runtime_requestion_snapshot";
 
 /// Process an incoming envelope and update the caches.
 ///
-/// OSGP unified requestion model: `permission.asked` and `question.asked`
-/// are treated as requestion items in the cache.
+/// OSGP unified requestion model: `permission_asked` and `question_asked`
+/// are treated as requestion items in the cache. All `event_subtype` values
+/// are stored in canonical underscore form (not legacy dot-form).
 pub async fn handle_envelope(
     envelope: &osgp::SessionEnvelope,
     session_cache: &Arc<RwLock<SessionStateCache>>,
@@ -65,7 +66,7 @@ pub async fn handle_envelope(
                 println!("[session_update] session_id={session_id} state={state}");
             }
         }
-        "requestion.asked" => {
+        "requestion_asked" => {
             let session_id = session_id_from_payload_or_source(payload, &envelope.source);
             let request_id =
                 extract_any_field(payload, &["requestID", "requestId", "requestionId"]);
@@ -88,7 +89,7 @@ pub async fn handle_envelope(
                 println!("[{event_subtype}] session_id={session_id} request_id={request_id} title={title}");
             }
         }
-        "requestion.resolved" | "requestion.cancelled" => {
+        "requestion_resolved" | "requestion_cancelled" => {
             let session_id = session_id_from_payload_or_source(payload, &envelope.source);
             let request_id =
                 extract_any_field(payload, &["requestID", "requestId", "requestionId"]);
@@ -102,7 +103,7 @@ pub async fn handle_envelope(
                 );
             }
         }
-        "requestion.updated" => {
+        "requestion_updated" => {
             let session_id = session_id_from_payload_or_source(payload, &envelope.source);
             let request_id =
                 extract_any_field(payload, &["requestID", "requestId", "requestionId"]);
@@ -291,13 +292,13 @@ async fn build_read_response(
 /// Addressing:
 /// - `source` = `self_address` (this endpoint)
 /// - `target` = `request.source` (reply-to the requestor)
-fn build_runtime_requestion_response<'a>(
+fn build_runtime_requestion_response(
     self_address: &SessionAddress,
     request: &ReadRequest,
     runtime_id: Option<&str>,
     session_id: Option<&str>,
     status: Option<&str>,
-    items: Vec<&'a PendingRequestion>,
+    items: Vec<&PendingRequestion>,
 ) -> ReadResponse {
     let filtered = filter_by_suffix(items, status);
 
@@ -353,28 +354,31 @@ fn session_id_from_payload_or_source(payload: &Value, source: &SessionAddress) -
 
 fn requestion_event_subtype(envelope: &osgp::SessionEnvelope) -> String {
     if envelope.link_type == "upload" {
-        return match envelope.subtype.as_str() {
-            "requestion_asked" => "requestion.asked".into(),
-            "requestion_updated" => "requestion.updated".into(),
-            "requestion_resolved" => "requestion.resolved".into(),
-            "requestion_cancelled" => "requestion.cancelled".into(),
-            "session_update" => "session_update".into(),
-            other => other.into(),
-        };
+        // Pass through canonical wire subtypes as-is.
+        // Canonical form: requestion_asked, requestion_updated, etc.
+        return envelope.subtype.clone();
     }
     compat_event_subtype(envelope)
 }
 
+/// Normalize legacy dotted `eventSubtype` payload field to canonical form.
+///
+/// Legacy emitters may send `"requestion.asked"` in the `eventSubtype` payload
+/// field. We normalize `.` → `_` so the cache always stores canonical form.
 fn compat_event_subtype(envelope: &osgp::SessionEnvelope) -> String {
-    envelope
+    let raw = envelope
         .payload
         .get("eventSubtype")
         .and_then(|v| v.as_str())
         .unwrap_or(envelope.subtype.as_str())
-        .to_string()
+        .to_string();
+    raw.replace('.', "_")
 }
 
 /// Filter requestions by status suffix (e.g. `"asked"`, `"resolved"`).
+///
+/// Matches the trailing `_asked` / `_resolved` / etc. portion of the
+/// canonical `event_subtype` stored in the cache.
 fn filter_by_suffix<'a>(
     items: Vec<&'a PendingRequestion>,
     status: Option<&str>,
@@ -382,7 +386,7 @@ fn filter_by_suffix<'a>(
     match status {
         Some(filter) => items
             .into_iter()
-            .filter(|r| r.event_subtype.ends_with(&format!(".{filter}")))
+            .filter(|r| r.event_subtype.ends_with(&format!("_{filter}")))
             .collect(),
         None => items,
     }

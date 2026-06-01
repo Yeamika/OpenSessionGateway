@@ -23,6 +23,8 @@ import { type OpencodeClient } from "@opencode-ai/sdk/v2"
 import { handleServerEvent } from "./server-event.js"
 import { handleSnapshotReadRequest } from "./ws-event/Snapshot.js"
 import { handleGetSessionMsg } from "./ws-event/GetSessionMsg.js"
+import { ensureInternalRouter, stopInternalRouter } from "./runtime/internal-router.js"
+import type { InternalRouterRuntimeConfig } from "./runtime/config.js"
 
 export type WriteLog = (level: string, message: string, extra?: Record<string, unknown>) => Promise<void>
 
@@ -48,6 +50,7 @@ type State = {
   lastError: string
   writeLog: WriteLog
   starting: Promise<void> | null
+  internalRouterStarted: boolean
 }
 
 const state: State = {
@@ -62,6 +65,7 @@ const state: State = {
     process.stderr.write(`${JSON.stringify({ time: new Date().toISOString(), level, message, extra })}\n`)
   },
   starting: null,
+  internalRouterStarted: false,
 }
 
 function text(value: unknown): string {
@@ -135,23 +139,34 @@ export const VeinManager = {
     state.instanceMcpMetadata.delete(key)
     if (state.instances.size === 0) {
       state.client?.disconnect()
+      if (state.internalRouterStarted) {
+        stopInternalRouter(state.writeLog)
+        state.internalRouterStarted = false
+      }
       state.client = null
       state.runtimeID = ""
       state.routerUrl = ""
       void syncTuiStatus({ status: "disconnected", lastError: "" })
     }
   },
-  async start(owner: ManagerInstance, config: Omit<GlassveinClientConfig, "nodeId"> & { nodeId?: string }) {
+  async start(owner: ManagerInstance, config: Omit<GlassveinClientConfig, "nodeId"> & { nodeId?: string; internalRouter?: InternalRouterRuntimeConfig }) {
     if (!state.starting && !state.client) {
       state.starting = (async () => {
         const nodeId = config.nodeId || text(owner.ctx?.directory).split(/[\\/]/).filter(Boolean).pop() || "unknown"
         const runtime = config.runtime || nodeId
         state.runtimeID = runtime
-        state.routerUrl = config.routerUrl
+        if (config.internalRouter) {
+          const internal = await ensureInternalRouter(config.internalRouter, state.writeLog)
+          state.internalRouterStarted = internal.enabled
+          state.routerUrl = internal.routerUrl
+        } else {
+          state.routerUrl = config.routerUrl
+        }
         await syncTuiStatus({ status: "connecting", ctx: owner.ctx })
 
         const client = new GlassveinWsClient({
           ...config,
+          routerUrl: state.routerUrl,
           nodeId,
           runtime,
         })
@@ -235,7 +250,7 @@ export const VeinManager = {
 
         await client.connect()
         state.client = client
-        await state.writeLog("info", "vein client started", { routerUrl: config.routerUrl, nodeId, runtime })
+        await state.writeLog("info", "vein client started", { routerUrl: state.routerUrl, nodeId, runtime, internalRouter: Boolean(config.internalRouter?.enabled) })
       })().finally(() => {
         state.starting = null
       })

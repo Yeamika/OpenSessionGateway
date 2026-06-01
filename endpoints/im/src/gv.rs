@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use futures_util::{SinkExt, StreamExt};
-use osgp::{LinkMessage, SessionAddress, SessionEnvelope};
+use osgp::{LinkHandshake, LinkMessage, SessionAddress, SessionEnvelope};
 use serde_json::{json, Value};
 use tokio::sync::{mpsc, Mutex};
 use tokio_tungstenite::{connect_async, tungstenite::Message};
@@ -66,21 +66,67 @@ impl GvClient {
         self.recorded.lock().await.clone()
     }
 
-    pub async fn send_tool(
+    /// Send a `control` / `add_prompt` envelope to the target runtime/session.
+    ///
+    /// Used when forwarding an IM inbound message to an OSG session.
+    /// The `msg` is the user-visible text; `system` carries IM route/chat metadata.
+    pub async fn send_add_prompt(
         &self,
-        channel: &str,
-        tool: &str,
-        args: Value,
-        mutating: bool,
+        msg: &str,
+        system: Option<&str>,
+        model: Option<&str>,
     ) -> Result<()> {
-        let link_type = if mutating { "control" } else { "request" };
-        let payload =
-            json!({ "channel": channel, "tool": tool, "arguments": args, "expect": "response" });
-        let mut env =
-            SessionEnvelope::new(self.source.clone(), self.target.clone(), link_type, payload);
-        env.link_type = link_type.into();
-        env.subtype = format!("im_gateway.{}.{}", channel, tool);
-        env.validate().map_err(|e| anyhow::anyhow!(e.to_string()))?;
+        let mut payload = json!({ "text": msg, "role": "user" });
+        if let Some(s) = system {
+            payload["system"] = json!(s);
+        }
+        if let Some(m) = model {
+            payload["model"] = json!(m);
+        }
+        let mut env = SessionEnvelope::new(
+            self.source.clone(),
+            self.target.clone(),
+            "control",
+            payload,
+        );
+        env.link_type = "control".into();
+        env.subtype = "add_prompt".into();
+        env.validate()
+            .map_err(|e| anyhow::anyhow!(e.to_string()))?;
+        self.recorded.lock().await.push(env.clone());
+        if let Some(tx) = &self.tx {
+            tx.send(env).await.context("GV send queue closed")?;
+        }
+        self.status.lock().await.sent += 1;
+        Ok(())
+    }
+
+    /// Send a `request` / `runtime_session_messages` envelope to the target.
+    ///
+    /// Used when the IM endpoint needs to read session messages from a runtime.
+    pub async fn send_read_messages(
+        &self,
+        session_id: &str,
+        limit: Option<u32>,
+        anchor_time: Option<&str>,
+    ) -> Result<()> {
+        let mut payload = json!({ "sessionId": session_id });
+        if let Some(l) = limit {
+            payload["limit"] = json!(l);
+        }
+        if let Some(a) = anchor_time {
+            payload["anchorTime"] = json!(a);
+        }
+        let mut env = SessionEnvelope::new(
+            self.source.clone(),
+            self.target.clone(),
+            "request",
+            payload,
+        );
+        env.link_type = "request".into();
+        env.subtype = "runtime_session_messages".into();
+        env.validate()
+            .map_err(|e| anyhow::anyhow!(e.to_string()))?;
         self.recorded.lock().await.push(env.clone());
         if let Some(tx) = &self.tx {
             tx.send(env).await.context("GV send queue closed")?;
@@ -95,16 +141,29 @@ async fn run_ws(
     mut rx: mpsc::Receiver<SessionEnvelope>,
     status: Arc<Mutex<GvStatus>>,
 ) {
-    let hello = json!({"nodeId": config.node_id, "role": "endpoint", "addresses": [config.address], "capabilities": ["im_endpoint"]});
+    // vNext handshake: LinkHandshake (no legacy role/capabilities)
+    let handshake = LinkHandshake::new(&config.node_id)
+        .with_metadata(json!({"endpoint":"im-endpoint"}));
     match connect_async(&config.router_url).await {
         Ok((ws, _)) => {
             let (mut writer, mut reader) = ws.split();
-            if let Err(error) = writer.send(Message::Text(hello.to_string().into())).await {
+            if let Err(error) = writer.send(Message::Text(serde_json::to_string(&handshake).unwrap().into())).await {
                 set_error(&status, error.to_string()).await;
                 return;
             }
+            // Wait for handshake reply before sending Announce
+            let _ = reader.next().await;
             status.lock().await.connected = true;
-            info!(router_url = %config.router_url, address = %format_address(&config.address), "IM endpoint connected to GV router");
+            info!(router_url = %config.router_url, address = %format_address(&config.address), "IM endpoint connected to GV router (LinkHandshake)");
+            // Announce source and target addresses
+            for addr in [&config.address, &config.target] {
+                let announce = LinkMessage::Announce { address: addr.clone(), distance: 0 };
+                if let Err(error) = writer.send(Message::Text(serde_json::to_string(&announce).unwrap().into())).await {
+                    set_error(&status, error.to_string()).await;
+                    break;
+                }
+                info!(address = %format_address(addr), "announced address to router");
+            }
             loop {
                 tokio::select! {
                     Some(env) = rx.recv() => {

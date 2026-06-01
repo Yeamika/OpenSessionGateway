@@ -26,6 +26,7 @@ impl PeerRole {
     }
 }
 
+#[allow(deprecated)]
 impl From<&PeerRole> for osgp::Role {
     fn from(role: &PeerRole) -> Self {
         match role {
@@ -35,6 +36,7 @@ impl From<&PeerRole> for osgp::Role {
     }
 }
 
+#[allow(deprecated)]
 impl TryFrom<osgp::Role> for PeerRole {
     type Error = String;
 
@@ -131,7 +133,7 @@ impl UpstreamHandle {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use osgp::{HelloMessage, Role, SessionAddress};
+    use osgp::SessionAddress;
 
     #[test]
     fn peer_role_network_only() {
@@ -140,10 +142,11 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)]
     fn hello_message_serialization() {
-        let hello = HelloMessage {
+        let hello = osgp::HelloMessage {
             node_id: "router-1".into(),
-            role: Role::Endpoint,
+            role: osgp::Role::Endpoint,
             addresses: vec![SessionAddress::new("dom-a", None, None)],
             capabilities: vec!["surface_viewer".into()],
         };
@@ -151,10 +154,21 @@ mod tests {
         assert!(json.contains("nodeId"));
         assert!(json.contains("endpoint"));
 
-        let de: HelloMessage = serde_json::from_str(&json).unwrap();
+        let de: osgp::HelloMessage = serde_json::from_str(&json).unwrap();
         assert_eq!(de.node_id, "router-1");
         assert_eq!(de.addresses.len(), 1);
         assert_eq!(de.capabilities, vec!["surface_viewer"]);
+    }
+
+    #[test]
+    fn link_handshake_serialization() {
+        let hs = osgp::LinkHandshake::new("router-1");
+        let json = serde_json::to_string(&hs).unwrap();
+        assert!(json.contains("peerId"));
+        assert!(json.contains("osgp/1"));
+
+        let de: osgp::LinkHandshake = serde_json::from_str(&json).unwrap();
+        assert_eq!(de.peer_id, "router-1");
     }
 
     #[test]

@@ -23,6 +23,7 @@ pub struct PublicState {
     pub status: String,
     pub last_error: String,
     pub runtime_config: Option<RuntimeConfig>,
+    pub router_status: String,
     pub logs: Vec<MailboxEvent>,
 }
 
@@ -31,6 +32,7 @@ struct StateInner {
     status: String,
     last_error: String,
     runtime_config: Option<RuntimeConfig>,
+    router_status: String,
     logs: VecDeque<MailboxEvent>,
 }
 
@@ -43,6 +45,7 @@ impl SharedState {
             status: "ready".into(),
             last_error: String::new(),
             runtime_config: None,
+            router_status: "disconnected".into(),
             logs: VecDeque::new(),
         })))
     }
@@ -53,12 +56,17 @@ impl SharedState {
             status: inner.status.clone(),
             last_error: inner.last_error.clone(),
             runtime_config: inner.runtime_config.clone(),
+            router_status: inner.router_status.clone(),
             logs: inner.logs.iter().cloned().collect(),
         }
     }
 
     pub async fn set_runtime_config(&self, config: RuntimeConfig) {
         self.0.lock().await.runtime_config = Some(config);
+    }
+
+    pub async fn set_router_status(&self, status: impl Into<String>) {
+        self.0.lock().await.router_status = status.into();
     }
 
     pub async fn log(&self, label: impl Into<String>, payload: Value) {

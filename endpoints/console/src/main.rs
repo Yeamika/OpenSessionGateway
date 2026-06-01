@@ -3,7 +3,11 @@
 //! Merges the former viewer session aggregation and control sender into one
 //! human-operated endpoint. The wire path stays canonical OSGP:
 //! address-level `source`/`target` and `upload`/`control`/`request`/`response`.
+//!
+//! Supports the router admin plane: send admin.request envelopes to
+//! read/write routes and rules via the TUI or command mode.
 
+mod admin;
 mod client;
 mod config;
 mod control;

@@ -61,7 +61,7 @@ function ok(value: unknown): boolean {
 
 /**
  * Build permission asked payload for GV protocol.
- * Output: { sessionID, requestID, title, reason, tool?, action, actionDescription?, createdAt }
+ * Output: { sessionID, requestID, title, description, questions, requestedAt }
  */
 export function buildPermissionAskedPayload(input: {
   event: Record<string, unknown>
@@ -84,22 +84,25 @@ export function buildPermissionAskedPayload(input: {
 
   if (!sessionID || !requestID || !title) return null
 
-  const q = input.query()
-  const displayID = typeof q.displayID === "string" ? q.displayID : undefined
+  registerPermissionBackend(sessionID, requestID)
+
+  const description = reason || actionDescription || tool || null
 
   return {
     sessionID,
     requestID,
     title,
-    reason: reason || null,
-    tool: tool || null,
-    action: action || null,
-    actionDescription: actionDescription || null,
-    createdAt,
-    displayID: displayID || null,
-    instanceWorkspaceDirectory: input.instanceWorkspace?.instanceWorkspaceDirectory || null,
-    instanceWorkspaceTitle: input.instanceWorkspace?.title || null,
-    requestionType: "permission" as const,
+    description,
+    questions: [{
+      question: title,
+      options: [
+        { label: "approve", description: "Allow this operation" },
+        { label: "deny", description: "Deny this operation" },
+      ],
+      multiple: false,
+      custom: false,
+    }],
+    requestedAt: createdAt,
   }
 }
 

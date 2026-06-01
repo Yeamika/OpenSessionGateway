@@ -24,6 +24,7 @@ use tracing::{debug, warn};
 
 use crate::filter::{FilterContext, FilterDecision, FilterRule};
 use crate::route::{NextHop, RouteTable};
+use crate::rule::{RuleContext, RuleTable};
 use crate::tap::TapEvent;
 use crate::transport::TransportMap;
 
@@ -35,11 +36,12 @@ use types::{ForwardMetrics, NoRouteExt};
 /// The core forwarding engine.
 ///
 /// Thread-safe and designed to be shared across multiple async tasks.
-/// Owns the route table, a list of filter rules, a tap event broadcaster,
-/// and forwarding metrics.
+/// Owns the route table, a rule table, a list of filter rules, a tap event
+/// broadcaster, and forwarding metrics.
 pub struct ForwardEngine {
     router_id: String,
     route_table: Arc<RwLock<RouteTable>>,
+    rule_table: Arc<RwLock<RuleTable>>,
     filters: Vec<Box<dyn FilterRule>>,
     tap_sender: broadcast::Sender<TapEvent>,
     metrics: Arc<ForwardMetrics>,
@@ -52,13 +54,31 @@ impl ForwardEngine {
         Self {
             router_id,
             route_table: Arc::new(RwLock::new(RouteTable::default())),
+            rule_table: Arc::new(RwLock::new(RuleTable::default())),
             filters,
             tap_sender,
             metrics: Arc::new(ForwardMetrics::default()),
         }
     }
 
-    /// Create an engine with no filters.
+    /// Create a new forward engine with an explicit rule table.
+    pub fn new_with_rule_table(
+        router_id: String,
+        filters: Vec<Box<dyn FilterRule>>,
+        rule_table: Arc<RwLock<RuleTable>>,
+    ) -> Self {
+        let (tap_sender, _) = broadcast::channel::<TapEvent>(1024);
+        Self {
+            router_id,
+            route_table: Arc::new(RwLock::new(RouteTable::default())),
+            rule_table,
+            filters,
+            tap_sender,
+            metrics: Arc::new(ForwardMetrics::default()),
+        }
+    }
+
+    /// Create an engine with no filters and an empty rule table.
     pub fn new_no_filters(router_id: String) -> Self {
         Self::new(router_id, vec![])
     }
@@ -66,6 +86,11 @@ impl ForwardEngine {
     /// Get a clone of the route table ARC for external mutation.
     pub fn route_table(&self) -> Arc<RwLock<RouteTable>> {
         self.route_table.clone()
+    }
+
+    /// Get a clone of the rule table ARC for external mutation.
+    pub fn rule_table(&self) -> Arc<RwLock<RuleTable>> {
+        self.rule_table.clone()
     }
 
     /// Subscribe to tap events.
@@ -84,6 +109,7 @@ impl ForwardEngine {
             forwarded_total: self.metrics.forwarded_total.load(std::sync::atomic::Ordering::Relaxed),
             dropped_total: self.metrics.dropped_total.load(std::sync::atomic::Ordering::Relaxed),
             filtered_total: self.metrics.filtered_total.load(std::sync::atomic::Ordering::Relaxed),
+            rule_dropped_total: self.metrics.rule_dropped_total.load(std::sync::atomic::Ordering::Relaxed),
         }
     }
 
@@ -98,7 +124,8 @@ impl ForwardEngine {
     /// 1. Hop recording (appends this router to route_hops)
     /// 2. TTL check
     /// 3. Filter pipeline
-    /// 4. Route resolution
+    /// 4. Rule evaluation (Drop / ForceNeighbor / DenyNeighbor / Continue)
+    /// 5. Route resolution
     ///
     /// Returns the routing decision. Call [`execute_decision`] to actually
     /// send the envelope.
@@ -123,6 +150,7 @@ impl ForwardEngine {
                 plan: ForwardPlan::Drop { reason },
                 blocked_by_filter: None,
                 hops: envelope.route_hops,
+                matched_rule_id: None,
             };
         }
         envelope.ttl -= 1;
@@ -169,16 +197,89 @@ impl ForwardEngine {
                     plan: ForwardPlan::Drop { reason },
                     blocked_by_filter: Some(filter.name().to_string()),
                     hops: envelope.route_hops,
+                    matched_rule_id: None,
                 };
             }
         }
 
-        // ── 3. Route resolution ───────────────────────────────────
+        // ── 3. Rule evaluation ────────────────────────────────────
+        let rule_ctx = RuleContext {
+            source: &envelope.source,
+            target: &envelope.target,
+            link_type: &envelope.link_type,
+            subtype: &envelope.subtype,
+            kind: &envelope.kind,
+            from_neighbor,
+            ttl: envelope.ttl,
+        };
+
+        let mut matched_rule_id: Option<String> = None;
+        let mut avoid_neighbor: Option<String> = None;
+
+        // Evaluate rules. We clone the action data so the RwLockReadGuard
+        // can be dropped before we act on the result.
+        let rule_action: Option<(String, crate::rule::RuleAction)> = {
+            let rule_table = self.rule_table.read().await;
+            rule_table
+                .find_matching(&rule_ctx)
+                .map(|(id, action)| (id.to_string(), action.clone()))
+        };
+
+        if let Some((rule_id, ref action)) = rule_action {
+            matched_rule_id = Some(rule_id);
+            match action {
+                crate::rule::RuleAction::Drop { reason } => {
+                    self.metrics.record_drop();
+                    self.metrics.record_rule_drop();
+                    self.emit_tap(TapEvent::EnvelopeDropped {
+                        router_id: self.router_id.clone(),
+                        envelope_id: envelope_id.clone(),
+                        reason: format!("rule drop: {reason}"),
+                    });
+                    return RouteDecision {
+                        plan: ForwardPlan::Drop {
+                            reason: format!("rule drop: {reason}"),
+                        },
+                        blocked_by_filter: None,
+                        hops: envelope.route_hops,
+                        matched_rule_id,
+                    };
+                }
+                crate::rule::RuleAction::ForceNeighbor { neighbor_id } => {
+                    self.emit_tap(TapEvent::ForwardDecided {
+                        router_id: self.router_id.clone(),
+                        envelope_id: envelope_id.clone(),
+                        neighbor: Some(neighbor_id.clone()),
+                        dropped: false,
+                        reason: None,
+                    });
+                    return RouteDecision {
+                        plan: ForwardPlan::ForwardNeighbor {
+                            neighbor_id: neighbor_id.clone(),
+                        },
+                        blocked_by_filter: None,
+                        hops: envelope.route_hops,
+                        matched_rule_id,
+                    };
+                }
+                crate::rule::RuleAction::DenyNeighbor { neighbor_id } => {
+                    avoid_neighbor = Some(neighbor_id.clone());
+                    // Continue to route resolution with avoidance
+                }
+                crate::rule::RuleAction::Continue => {
+                    // No-op, fall through to route resolution
+                }
+            }
+        }
+
+        // ── 4. Route resolution ───────────────────────────────────
+        // Combine DenyNeighbor avoidance with split-horizon (from_neighbor).
+        let effective_avoid = avoid_neighbor.as_deref().or(from_neighbor);
         let fwd_decision = self
             .route_table
             .read()
             .await
-            .decide_for_target(&envelope.target, from_neighbor);
+            .decide_for_target(&envelope.target, effective_avoid);
 
         let plan = match &fwd_decision.next_hop {
             NextHop::Local => ForwardPlan::DeliverLocal,
@@ -214,6 +315,7 @@ impl ForwardEngine {
             plan,
             blocked_by_filter: None,
             hops: envelope.route_hops,
+            matched_rule_id,
         }
     }
 

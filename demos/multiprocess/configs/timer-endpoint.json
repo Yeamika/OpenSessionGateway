@@ -1,0 +1,18 @@
+{
+  "listen": { "host": "127.0.0.1", "port": 8789 },
+  "gv": {
+    "routerUrl": "ws://127.0.0.1:7201",
+    "domain": "east",
+    "runtimeID": "timer-endpoint",
+    "peerId": "timer-endpoint",
+    "sessionID": "timer",
+    "sourceRuntime": "timer-endpoint",
+    "sourceSession": "timer",
+    "targetRuntime": "target-runtime",
+    "targetSession": "target-session"
+  },
+  "webExecutor": {
+    "runtimeID": "timer-web-caller",
+    "sessionID": "timer-web-session"
+  }
+}

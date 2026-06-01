@@ -3,10 +3,12 @@
 use super::*;
 use crate::filter::DomainWhitelistFilter;
 use crate::route::RouteAnnouncement;
+use crate::rule::{Rule, RuleAction, RuleMatcher, RuleTable};
 use crate::transport::{InMemoryTransport, Transport};
 use serde_json::json;
 use osgp::SessionAddress;
 use std::sync::Arc;
+use tokio::sync::RwLock;
 
 fn addr(domain: &str) -> SessionAddress {
     SessionAddress::new(domain, Some("rt".into()), Some("ses".into()))
@@ -244,4 +246,338 @@ async fn metrics_snapshot_counts() {
 
     let snap = engine.metrics_snapshot();
     assert_eq!(snap.forwarded_total, 3);
+}
+
+// ── Rule integration tests ──────────────────────────────────────────
+
+fn make_rule(id: &str, priority: u32, matcher: RuleMatcher, action: RuleAction) -> Rule {
+    Rule {
+        id: id.to_string(),
+        priority,
+        enabled: true,
+        matcher,
+        action,
+        revision: 0,
+    }
+}
+
+/// Build a ForwardEngine with a shared RuleTable for rule tests.
+/// Must be called from outside a tokio runtime (uses blocking_write).
+fn engine_with_rules(rules: Vec<Rule>) -> (ForwardEngine, Arc<RwLock<RuleTable>>) {
+    let rule_table = Arc::new(RwLock::new(RuleTable::default()));
+    {
+        let mut rt = rule_table.blocking_write();
+        for rule in rules {
+            rt.add_rule(rule);
+        }
+    }
+    let engine = ForwardEngine::new_with_rule_table("r1".into(), vec![], rule_table.clone());
+    (engine, rule_table)
+}
+
+/// Build a ForwardEngine with a shared RuleTable for rule tests (async version).
+async fn engine_with_rules_async(rules: Vec<Rule>) -> (ForwardEngine, Arc<RwLock<RuleTable>>) {
+    let rule_table = Arc::new(RwLock::new(RuleTable::default()));
+    {
+        let mut rt = rule_table.write().await;
+        for rule in rules {
+            rt.add_rule(rule);
+        }
+    }
+    let engine = ForwardEngine::new_with_rule_table("r1".into(), vec![], rule_table.clone());
+    (engine, rule_table)
+}
+
+#[tokio::test]
+async fn rule_drop_kills_envelope() {
+    // Rule: drop all upload messages
+    let (engine, _) = engine_with_rules_async(vec![make_rule(
+        "drop-upload",
+        10,
+        RuleMatcher {
+            link_type: Some("upload".into()),
+            ..Default::default()
+        },
+        RuleAction::Drop {
+            reason: "upload blocked".into(),
+        },
+    )])
+    .await;
+
+    let mut env = envelope("src", "target");
+    env.link_type = "upload".into();
+
+    let decision = engine.process_envelope(env, None, false).await;
+
+    match decision.plan {
+        ForwardPlan::Drop { reason } => {
+            assert!(reason.contains("rule drop"), "reason: {reason}");
+            assert!(reason.contains("upload blocked"), "reason: {reason}");
+        }
+        other => panic!("expected Drop, got: {:?}", other),
+    }
+    assert_eq!(decision.matched_rule_id, Some("drop-upload".into()));
+    assert_eq!(engine.metrics_snapshot().rule_dropped_total, 1);
+}
+
+#[tokio::test]
+async fn rule_force_neighbor_overrides_route() {
+    // Route: target → n1
+    // Rule: force all messages to n2
+    let (engine, _) = engine_with_rules_async(vec![make_rule(
+        "force-n2",
+        5,
+        RuleMatcher::default(), // match everything
+        RuleAction::ForceNeighbor {
+            neighbor_id: "n2".into(),
+        },
+    )])
+    .await;
+
+    let ann = RouteAnnouncement::local(addr("target"));
+    engine
+        .route_table()
+        .write()
+        .await
+        .upsert_announcement(&ann, "n1");
+
+    let env = envelope("src", "target");
+    let decision = engine.process_envelope(env, None, false).await;
+
+    match decision.plan {
+        ForwardPlan::ForwardNeighbor { neighbor_id } => {
+            assert_eq!(neighbor_id, "n2");
+        }
+        other => panic!("expected ForwardNeighbor(n2), got: {:?}", other),
+    }
+    assert_eq!(decision.matched_rule_id, Some("force-n2".into()));
+}
+
+#[tokio::test]
+async fn rule_deny_neighbor_avoids_in_route() {
+    // Route: target → n1 (distance 1) and n2 (distance 2)
+    // Rule: deny n1
+    // Expected: route to n2 (next best after n1 is denied)
+    let (engine, _) = engine_with_rules_async(vec![make_rule(
+        "deny-n1",
+        10,
+        RuleMatcher::default(),
+        RuleAction::DenyNeighbor {
+            neighbor_id: "n1".into(),
+        },
+    )])
+    .await;
+
+    // Use insert_manual to ensure both entries exist in the same bucket.
+    {
+        let rt = engine.route_table();
+        let mut rt = rt.write().await;
+        rt.insert_manual(addr("target"), "n1", 1);
+        rt.insert_manual(addr("target"), "n2", 2);
+    }
+
+    let env = envelope("src", "target");
+    let decision = engine.process_envelope(env, None, false).await;
+
+    match decision.plan {
+        ForwardPlan::ForwardNeighbor { neighbor_id } => {
+            assert_eq!(neighbor_id, "n2", "should skip n1 and route to n2");
+        }
+        other => panic!("expected ForwardNeighbor(n2), got: {:?}", other),
+    }
+    assert_eq!(decision.matched_rule_id, Some("deny-n1".into()));
+}
+
+#[tokio::test]
+async fn rule_continue_falls_through_to_route() {
+    // Rule: continue (no-op)
+    // Route: target → n1
+    let (engine, _) = engine_with_rules_async(vec![make_rule(
+        "pass",
+        10,
+        RuleMatcher::default(),
+        RuleAction::Continue,
+    )])
+    .await;
+
+    let ann = RouteAnnouncement::local(addr("target"));
+    engine
+        .route_table()
+        .write()
+        .await
+        .upsert_announcement(&ann, "n1");
+
+    let env = envelope("src", "target");
+    let decision = engine.process_envelope(env, None, false).await;
+
+    match decision.plan {
+        ForwardPlan::ForwardNeighbor { neighbor_id } => {
+            assert_eq!(neighbor_id, "n1");
+        }
+        other => panic!("expected ForwardNeighbor(n1), got: {:?}", other),
+    }
+    // Continue rule matches but matched_rule_id is still recorded
+    assert_eq!(decision.matched_rule_id, Some("pass".into()));
+}
+
+#[tokio::test]
+async fn rule_no_match_uses_route_table() {
+    // Rule: only matches "upload" link_type
+    // Envelope: link_type = "control"
+    // Route: target → n1
+    let (engine, _) = engine_with_rules_async(vec![make_rule(
+        "upload-only",
+        10,
+        RuleMatcher {
+            link_type: Some("upload".into()),
+            ..Default::default()
+        },
+        RuleAction::Drop {
+            reason: "blocked".into(),
+        },
+    )])
+    .await;
+
+    let ann = RouteAnnouncement::local(addr("target"));
+    engine
+        .route_table()
+        .write()
+        .await
+        .upsert_announcement(&ann, "n1");
+
+    let env = envelope("src", "target"); // kind="test.ping", link_type not "upload"
+    let decision = engine.process_envelope(env, None, false).await;
+
+    match decision.plan {
+        ForwardPlan::ForwardNeighbor { neighbor_id } => {
+            assert_eq!(neighbor_id, "n1");
+        }
+        other => panic!("expected ForwardNeighbor(n1), got: {:?}", other),
+    }
+    assert!(
+        decision.matched_rule_id.is_none(),
+        "no rule should match control traffic"
+    );
+}
+
+#[tokio::test]
+async fn rule_disabled_rule_does_not_match() {
+    // Rule: drop all, but disabled
+    let rule_table = Arc::new(RwLock::new(RuleTable::default()));
+    {
+        let mut rt = rule_table.write().await;
+        rt.add_rule(make_rule(
+            "disabled-drop",
+            10,
+            RuleMatcher::default(),
+            RuleAction::Drop {
+                reason: "should not fire".into(),
+            },
+        ));
+        rt.disable_rule("disabled-drop");
+    }
+    let engine = ForwardEngine::new_with_rule_table("r1".into(), vec![], rule_table);
+
+    let ann = RouteAnnouncement::local(addr("target"));
+    engine
+        .route_table()
+        .write()
+        .await
+        .upsert_announcement(&ann, "n1");
+
+    let env = envelope("src", "target");
+    let decision = engine.process_envelope(env, None, false).await;
+
+    match decision.plan {
+        ForwardPlan::ForwardNeighbor { neighbor_id } => {
+            assert_eq!(neighbor_id, "n1");
+        }
+        other => panic!("expected ForwardNeighbor, got: {:?}", other),
+    }
+    assert!(decision.matched_rule_id.is_none());
+}
+
+#[tokio::test]
+async fn rule_priority_ordering() {
+    // Two rules: low priority (100) drops, high priority (10) forces n2
+    // High priority should win
+    let (engine, _) = engine_with_rules_async(vec![
+        make_rule(
+            "low-priority-drop",
+            100,
+            RuleMatcher::default(),
+            RuleAction::Drop {
+                reason: "should not fire".into(),
+            },
+        ),
+        make_rule(
+            "high-priority-force",
+            10,
+            RuleMatcher::default(),
+            RuleAction::ForceNeighbor {
+                neighbor_id: "n2".into(),
+            },
+        ),
+    ])
+    .await;
+
+    let ann = RouteAnnouncement::local(addr("target"));
+    engine
+        .route_table()
+        .write()
+        .await
+        .upsert_announcement(&ann, "n1");
+
+    let env = envelope("src", "target");
+    let decision = engine.process_envelope(env, None, false).await;
+
+    match decision.plan {
+        ForwardPlan::ForwardNeighbor { neighbor_id } => {
+            assert_eq!(neighbor_id, "n2");
+        }
+        other => panic!("expected ForwardNeighbor(n2), got: {:?}", other),
+    }
+    assert_eq!(decision.matched_rule_id, Some("high-priority-force".into()));
+}
+
+#[tokio::test]
+async fn rule_subtype_matching() {
+    // Rule: only drop control/add_prompt
+    let (engine, _) = engine_with_rules_async(vec![make_rule(
+        "block-add-prompt",
+        10,
+        RuleMatcher {
+            link_type: Some("control".into()),
+            subtype: Some("add_prompt".into()),
+            ..Default::default()
+        },
+        RuleAction::Drop {
+            reason: "add_prompt blocked".into(),
+        },
+    )])
+    .await;
+
+    // Should match: control/add_prompt
+    let mut env = envelope("src", "target");
+    env.link_type = "control".into();
+    env.subtype = "add_prompt".into();
+    let decision = engine.process_envelope(env, None, false).await;
+    assert!(matches!(decision.plan, ForwardPlan::Drop { .. }));
+    assert_eq!(decision.matched_rule_id, Some("block-add-prompt".into()));
+
+    // Should NOT match: control/abort_session
+    let mut env2 = envelope("src", "target");
+    env2.link_type = "control".into();
+    env2.subtype = "abort_session".into();
+
+    let ann = RouteAnnouncement::local(addr("target"));
+    engine
+        .route_table()
+        .write()
+        .await
+        .upsert_announcement(&ann, "n1");
+
+    let decision2 = engine.process_envelope(env2, None, false).await;
+    assert!(matches!(decision2.plan, ForwardPlan::ForwardNeighbor { .. }));
+    assert!(decision2.matched_rule_id.is_none());
 }

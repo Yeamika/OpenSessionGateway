@@ -43,6 +43,13 @@ impl AppState {
     }
     pub(super) async fn list_messages(&self, a: Value) -> Result<Value> {
         let r = str_arg(&a, "routeID")?;
+        // Canonical OSGP: request / runtime_session_messages
+        let session_id = a["sessionID"].as_str().unwrap_or("session");
+        let limit = a["limit"].as_u64().map(|v| v as u32);
+        let _ = self
+            .gv
+            .send_read_messages(session_id, limit, None)
+            .await;
         let items = self
             .inner
             .lock()
@@ -60,6 +67,15 @@ impl AppState {
         msg["executor"] = executor_audit(&a);
         self.push_message(&route["routeID"].as_str().unwrap_or(""), msg.clone())
             .await;
+        // Canonical OSGP: control / add_prompt — forward IM message to target runtime
+        let system = format!(
+            "<IMGateway routeID={} provider={} accountID={} chatID={}>",
+            route["routeID"].as_str().unwrap_or(""),
+            route["provider"].as_str().unwrap_or(""),
+            route["accountID"].as_str().unwrap_or(""),
+            route["chatID"].as_str().unwrap_or(""),
+        );
+        let _ = self.gv.send_add_prompt(text, Some(&system), None).await;
         Ok(msg)
     }
     pub(super) async fn request_upload(&self, a: Value) -> Result<Value> {
@@ -82,18 +98,23 @@ impl AppState {
             up["status"] = json!("ready");
             up["contentText"] = json!(format!("generated content for {upload_id}"));
         }
+        let up_type = up["type"].as_str().unwrap_or("file").to_string();
         let res_key = format!("res_{}", upload_id);
-        let msg = message(
-            &route,
-            up["type"].as_str().unwrap_or("file"),
-            &res_key,
-            up["type"].as_str().unwrap_or("file"),
-            &res_key,
-        );
+        let msg = message(&route, &up_type, &res_key, &up_type, &res_key);
         m.messages
             .entry(route["routeID"].as_str().unwrap_or("").into())
             .or_default()
             .insert(0, msg.clone());
+        drop(m);
+        // Canonical OSGP: control / add_prompt — forward upload notification to target runtime
+        let system = format!(
+            "<IMGatewayUpload routeID={} uploadID={} type={}>",
+            route["routeID"].as_str().unwrap_or(""),
+            upload_id,
+            up_type,
+        );
+        let preview = format!("[Uploaded {}]", up_type);
+        let _ = self.gv.send_add_prompt(&preview, Some(&system), None).await;
         Ok(
             json!({"routeID":route["routeID"],"uploadID":upload_id,"messageID":msg["messageID"],"msgType":msg["msgType"]}),
         )

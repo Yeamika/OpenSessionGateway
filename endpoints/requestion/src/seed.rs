@@ -15,9 +15,9 @@ use crate::cache::{RequestionCache, SessionStateCache};
 ///
 /// Populates:
 /// - 2 session states (`ses-alpha`, `ses-beta`)
-/// - 5 pending requestions covering `requestion.asked`, `permission.asked`,
-///   `question.asked`, `requestion.updated`, and one already-removed
-///   (`requestion.resolved`) to demonstrate lifecycle.
+/// - 5 pending requestions covering `requestion_asked`, `permission_asked`,
+///   `question_asked`, `requestion_updated`, and one already-removed
+///   (`requestion_resolved`) to demonstrate lifecycle.
 pub fn seed_demo_data(
     session_cache: &mut SessionStateCache,
     requestion_cache: &mut RequestionCache,
@@ -48,12 +48,12 @@ pub fn seed_demo_data(
             Some("runtime-alpha".into()),
             Some("ses-alpha".into()),
         ),
-        "requestion.asked".into(),
+        "requestion_asked".into(),
         json!({
             "sessionID": "ses-alpha",
             "requestID": "req-deploy-1",
             "title": "Allow deployment to production",
-            "type": "requestion.asked",
+            "type": "requestion_asked",
         }),
     );
 
@@ -67,12 +67,12 @@ pub fn seed_demo_data(
             Some("runtime-alpha".into()),
             Some("ses-alpha".into()),
         ),
-        "permission.asked".into(),
+        "permission_asked".into(),
         json!({
             "sessionID": "ses-alpha",
             "requestID": "req-perm-1",
             "title": "Grant file system access",
-            "type": "permission.asked",
+            "type": "permission_asked",
         }),
     );
 
@@ -86,12 +86,12 @@ pub fn seed_demo_data(
             Some("runtime-beta".into()),
             Some("ses-beta".into()),
         ),
-        "question.asked".into(),
+        "question_asked".into(),
         json!({
             "sessionID": "ses-beta",
             "requestID": "req-question-1",
             "title": "Confirm action: delete stale cache?",
-            "type": "question.asked",
+            "type": "question_asked",
         }),
     );
 
@@ -105,19 +105,19 @@ pub fn seed_demo_data(
             Some("runtime-beta".into()),
             Some("ses-beta".into()),
         ),
-        "requestion.updated".into(),
+        "requestion_updated".into(),
         json!({
             "sessionID": "ses-beta",
             "requestID": "req-update-1",
             "title": "Updated: change deployment target",
-            "type": "requestion.updated",
+            "type": "requestion_updated",
         }),
     );
 
     // Note: we do NOT seed resolved/cancelled items — those are removed
     // from the cache by design. The demo can demonstrate the full lifecycle
     // by having the demo script emit:
-    //   requestion.resolved → cache.remove() → snapshot count decreases
+    //   requestion_resolved → cache.remove() → snapshot count decreases
 
     info!(sessions = 2, requestions = 4, "demo data seeded");
 }

@@ -1,0 +1,14 @@
+{
+  "accounts": [
+    {
+      "provider": "local",
+      "accountID": "local-dev",
+      "displayName": "Local Dev",
+      "enabled": true,
+      "config": {
+        "defaultChatID": "local-chat",
+        "defaultChatName": "Local Chat"
+      }
+    }
+  ]
+}

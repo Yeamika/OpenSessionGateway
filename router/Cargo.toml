@@ -29,3 +29,6 @@ default = []
 ## does **not** change `start_listener` behaviour yet. That wiring belongs to
 ## Phase C.
 pingora-listener = ["gv-core/pingora-transport", "pingora-core"]
+
+[dev-dependencies]
+tempfile.workspace = true

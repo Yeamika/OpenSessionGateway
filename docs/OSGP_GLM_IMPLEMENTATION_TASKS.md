@@ -145,7 +145,6 @@ Forbidden:
 
 Inputs:
 
-- `demos/gv-network-validation.rs`
 - `demos/ws-client-demo.rs`
 - `demos/alpha-client/`
 - `demos/beta-client/`
@@ -218,4 +217,4 @@ Still needs GLM cleanup:
 - `integrations/opencode/plugin/src/gvplugin/event-mapper.ts` still uses internal `kind` and old `opencode_event` mapping; migrate to OSGP upload subtypes or remove from main chain.
 - `integrations/opencode/plugin/dist/` contains stale generated declarations with old roles/kind; rebuild only after source convergence is accepted.
 - Non-workspace legacy crates such as `crates/glassvein-osg-surface/`, `crates/glassvein-core/`, `crates/glassvein-router/`, and `crates/glassvein-clientlib/` still contain historical role/kind naming. Decide whether to delete, archive, or update them.
-- `demos/gv-network-validation.rs` still has legacy `SessionEnvelope` compatibility scaffolding and should become a pure canonical OSGP harness in Task E.
+- The old two-router validation harness was removed; multi-process demo scripts are the remaining demo refresh target.

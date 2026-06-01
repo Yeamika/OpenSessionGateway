@@ -18,7 +18,6 @@ endpoints/requestion/               # requestion-endpoint
 crates/surface/                     # surface library (observer + control + query)
 
 integrations/opencode/plugin/       # @opensessiongateway/opencode-vein-plugin (TypeScript)
-integrations/osg/plugins/           # OSG MCP plugins (runtime-control, session-bridge, etc.)
 packages/glassvein-router/          # npm wrapper for Rust router binary
 
 demos/                              # demo binaries (alpha/beta/gamma-client)
@@ -36,3 +35,5 @@ cargo test -p osgp -p router
 ```
 
 No deployment, container, server, Verdaccio, or npm publish operation is part of this workspace scaffold.
+
+Legacy `integrations/osg/plugins/` TypeScript OSG MCP plugins have been removed. Runtime-control, session-bridge, timer, and IM gateway behavior should live in Rust endpoints or runtime-provided MCP tools, not under the removed plugin tree.

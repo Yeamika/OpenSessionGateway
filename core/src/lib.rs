@@ -19,7 +19,9 @@
 
 pub mod filter;
 pub mod forward;
+pub mod permission;
 pub mod route;
+pub mod rule;
 pub mod tap;
 pub mod transport;
 
@@ -27,6 +29,10 @@ pub mod transport;
 
 pub use filter::{FilterContext, FilterDecision, FilterRule};
 pub use forward::{ForwardEngine, ForwardMetricsSnapshot, ForwardPlan, RouteDecision};
-pub use route::{ForwardDecision, NextHop, RouteAnnouncement, RouteTable};
+pub use permission::{
+    ApprovalKind, GrantRecord, PermissionOp, PermissionQueue, PermissionRequest, PermissionStatus,
+};
+pub use route::{ForwardDecision, NextHop, RouteAnnouncement, RouteOrigin, RouteSnapshotEntry, RouteTable};
+pub use rule::{Rule, RuleAction, RuleContext, RuleMatcher, RuleSnapshotEntry, RuleTable};
 pub use tap::TapEvent;
 pub use transport::{InMemoryTransport, Transport, TransportFactory, TransportMap};

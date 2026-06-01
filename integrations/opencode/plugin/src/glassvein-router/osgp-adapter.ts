@@ -7,7 +7,8 @@
  *   { type: "announce", address: {...}, distance: 0 }                   (flat, no `data` wrapper)
  *   { type: "ping" } / { type: "pong" }
  *
- * The inner SessionEnvelope uses `type`/`subtype` fields (camelCase).
+ * The inner SessionEnvelope uses legacy `kind` plus canonical
+ * `linkType`/`subtype` fields (camelCase).
  * The SDK use `linkType`/`subtype` with `RouteTarget` source/target.
  *
  * This adapter provides:
@@ -96,6 +97,7 @@ export function osgpEnvelopeToRouter(env: OsgpEnvelope): RouterSessionEnvelope {
     id: env.messageId ?? crypto.randomUUID(),
     source: sourceAddr,
     target: targetAddr,
+    kind: routerEnvelopeKind(linkType, env.subtype),
     linkType,
     subtype: env.subtype,
     payload: env.payload,
@@ -103,6 +105,13 @@ export function osgpEnvelopeToRouter(env: OsgpEnvelope): RouterSessionEnvelope {
     routeHops: env.routeHops ? [...env.routeHops] : [],
     ...(env.originSurface ? { originSurface: env.originSurface } : {}),
   } as unknown as RouterSessionEnvelope
+}
+
+function routerEnvelopeKind(linkType: OsgpType | string, subtype: string): string {
+  if (linkType === "upload" && subtype === "session_update") return "session_update"
+  if (linkType === "upload" && subtype.startsWith("requestion_")) return subtype.replace("requestion_", "requestion.")
+  if (linkType === "control") return `control.${subtype}`
+  return `${linkType}.${subtype}`
 }
 
 /**

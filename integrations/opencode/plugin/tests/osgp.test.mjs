@@ -4,6 +4,7 @@ import fs from "node:fs"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { createGlassveinClient, GlassveinWsClient } from "../dist/glassvein-router/glassvein-ws-client.js"
+import { buildInternalRouterArgs } from "../dist/opencode/runtime/internal-router.js"
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
 
@@ -38,14 +39,47 @@ test("source address includes runtime for viewer display", () => {
   assert.equal(client.getSourceAddress().runtime, "real-workspace")
 })
 
+test("package root resolves to opencode server plugin entry", async () => {
+  const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"))
+  const mod = await import("../dist/entry.js")
+  assert.equal(pkg.main, "dist/entry.js")
+  assert.equal(pkg.exports["."], "./dist/entry.js")
+  assert.equal(pkg.exports["./server"], "./dist/entry.js")
+  assert.equal(pkg.dependencies["@opensessiongateway/glassvein-router"], "^0.2.0")
+  assert.equal(typeof mod.default.server, "function")
+  assert.equal(mod.default.id, "@opensessiongateway/opencode-vein-plugin")
+})
+
+test("server-level internal router args include bind and upstreams", () => {
+  const args = buildInternalRouterArgs({
+    enabled: true,
+    nodeId: "opencode-gv-router",
+    bindHost: "127.0.0.1",
+    port: 7241,
+    bindAddr: "127.0.0.1:7241",
+    routerUrl: "ws://127.0.0.1:7241",
+    upstreamUrls: ["ws://127.0.0.1:4090", "ws://127.0.0.1:4091"],
+    binaryPath: "",
+    startupTimeoutMs: 5000,
+  })
+  assert.deepEqual(args, [
+    "--node-id", "opencode-gv-router",
+    "--bind", "127.0.0.1:7241",
+    "--upstream", "ws://127.0.0.1:4090",
+    "--upstream", "ws://127.0.0.1:4091",
+  ])
+})
+
 test("upload session_update uses canonical OSGP envelope", () => {
   const { client, sent } = connectedClient()
-  assert.equal(client.sendUploadEvent("session_update", { sessionId: "ses-1", state: "idle" }), true)
+  assert.equal(client.sendUploadEvent("session_update", { sessionID: "ses-1", state: "idle" }), true)
   assert.equal(sent[0].type, "envelope")
   assert.equal(sent[0].linkType, "upload")
   assert.equal(sent[0].subtype, "session_update")
+  assert.equal(sent[0].kind, "session_update")
   assert.equal(sent[0].source.runtime, "workspace-a")
-  assert.equal(Object.hasOwn(sent[0], `ki${"n"}d`), false)
+  assert.equal(sent[0].payload.sessionID, "ses-1")
+  assert.equal(Object.hasOwn(sent[0].payload, "sessionId"), false)
 })
 
 test("runtime_session_messages response targets original source", async () => {

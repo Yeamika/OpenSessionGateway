@@ -1,7 +1,7 @@
 use crate::state::{EndpointConfig, SharedState};
 use anyhow::{Context, Result};
 use futures_util::{SinkExt, StreamExt};
-use osgp::{Envelope, LinkMessage, LinkType, Payload, RouteTarget, SessionAddress};
+use osgp::{Envelope, LinkHandshake, LinkMessage, LinkType, Payload, RouteTarget, SessionAddress};
 use serde_json::{json, Value};
 use tokio::sync::mpsc;
 use tokio_tungstenite::{connect_async, tungstenite::Message};
@@ -78,17 +78,53 @@ async fn run_connection(
         .await
         .with_context(|| format!("connect {}", config.router_url))?;
     let (mut writer, mut reader) = ws.split();
-    let hello = json!({
-        "nodeId": config.node_id,
-        "role": "endpoint",
-        "addresses": [config.source],
-        "capabilities": ["surface_viewer"],
-    });
-    writer.send(Message::Text(hello.to_string().into())).await?;
-    let _ = reader.next().await;
+
+    // Use osgp::LinkHandshake (camelCase, protocolVersion "osgp/1").
+    let source_json = serde_json::to_value(&config.source)
+        .unwrap_or(json!(config.source.domain));
+    let handshake = LinkHandshake::new(&config.node_id)
+        .with_metadata(json!({
+            "endpoint": "session-control",
+            "source": source_json,
+        }));
+    writer
+        .send(Message::Text(serde_json::to_string(&handshake).unwrap_or_default().into()))
+        .await?;
+
+    // Wait for handshake reply from router.
+    // Router replies with a legacy HelloMessage: {"nodeId":"...","role":"router",...}
+    // We accept any valid JSON reply that contains a nodeId as a successful ack.
+    let ack_frame = reader
+        .next()
+        .await
+        .context("no handshake reply from router")?
+        .context("websocket error waiting for reply")?;
+    let ack_text = ack_frame
+        .to_text()
+        .context("non-text reply frame")?;
+    let ack_json: Value = serde_json::from_str(ack_text)
+        .context("invalid JSON in handshake reply")?;
+    // Accept if reply has "nodeId" (HelloMessage) or "success" (LinkHandshakeAck)
+    let has_node_id = ack_json.get("nodeId").and_then(Value::as_str).is_some();
+    let is_success_ack = ack_json.get("success").and_then(Value::as_bool).unwrap_or(false);
+    if !has_node_id && !is_success_ack {
+        let error_msg = ack_json
+            .get("error")
+            .and_then(Value::as_str)
+            .unwrap_or("unknown");
+        anyhow::bail!("handshake rejected by router: {}", error_msg);
+    }
+    let router_node_id = ack_json
+        .get("nodeId")
+        .and_then(Value::as_str)
+        .unwrap_or("unknown");
+
     state.set_status("connected", "").await;
     state
-        .log("gv_connected", json!({ "routerUrl": config.router_url }))
+        .log(
+            "gv_connected",
+            json!({ "routerUrl": config.router_url, "routerNodeId": router_node_id }),
+        )
         .await;
 
     loop {

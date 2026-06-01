@@ -13,6 +13,7 @@
 //!
 //! ## Module structure
 //!
+//! - `admin`: Admin plane handler for route/rule management
 //! - `config`: Router configuration
 //! - `node`: Router node main structure and lifecycle
 //! - `connection`: WebSocket connection management (listener, upstream, peer registry)
@@ -21,18 +22,25 @@
 //! - `envelope_forward`: Legacy envelope forwarding, drop handling, error replies
 //! - `read_forward`: Cross-domain read request/response forwarding
 
+pub mod admin;
 pub mod config;
 pub mod connection;
 pub mod envelope_forward;
 pub mod node;
+pub mod operator_shell;
 pub mod read_forward;
+pub mod state_store;
 mod tap;
 mod transport;
 
+pub use admin::{AdminHandler, AdminRequest, AdminResponse};
 pub use config::{ListenerBackend, RouterConfig};
 pub use connection::{ConnectionManager, ListenerConfig, UpstreamConfig};
 pub use node::RouterNode;
+pub use operator_shell::{parse_command, ShellCommand, ShellOutput, HELP_TEXT};
+pub use state_store::{StateStore, RouterState, SerializedRule};
 pub use tap::{EnvelopeSummary, TapEvent};
+#[allow(deprecated)]
 pub use osgp::{HelloMessage, Role};
 pub use transport::{PeerHandle, PeerRole, UpstreamHandle};
 
@@ -48,6 +56,16 @@ pub fn format_address(addr: &SessionAddress) -> String {
         (None, Some(ses)) => format!("{}/*/{}", addr.domain, ses),
         (None, None) => format!("{}/*/*", addr.domain),
     }
+}
+
+/// Parse a slash-delimited address string into a SessionAddress.
+/// Format: "domain" or "domain/runtime" or "domain/runtime/session".
+/// Wildcards: "*" in runtime or session position becomes None.
+pub fn format_address_parse(s: &str) -> SessionAddress {
+    let parts: Vec<&str> = s.split('/').collect();
+    let runtime = parts.get(1).and_then(|r| if *r == "*" { None } else { Some(r.to_string()) });
+    let session = parts.get(2).and_then(|s| if *s == "*" { None } else { Some(s.to_string()) });
+    SessionAddress::new(parts[0], runtime, session)
 }
 
 // ── Tests ───────────────────────────────────────────────────────────

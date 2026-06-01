@@ -1,0 +1,11 @@
+{
+  "mode": "once",
+  "nodeId": "console-endpoint",
+  "routerUrl": "ws://127.0.0.1:7200",
+  "address": "east/console-runtime/console",
+  "target": "east/runtime-alpha/session-alpha",
+  "refreshIntervalMs": 1000,
+  "smokeDurationMs": 3000,
+  "command": "runtime_session_view_snapshot",
+  "message": ""
+}

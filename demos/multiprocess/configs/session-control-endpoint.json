@@ -1,0 +1,15 @@
+{
+  "listen": "127.0.0.1:7310",
+  "router_url": "ws://127.0.0.1:7201",
+  "node_id": "session-control-endpoint",
+  "source": {
+    "domain": "east",
+    "runtime": "session-control-endpoint",
+    "session": "sc-demo-session"
+  },
+  "target": {
+    "domain": "east",
+    "runtime": "target-runtime",
+    "session": "target-session"
+  }
+}

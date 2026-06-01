@@ -52,11 +52,12 @@ mod state_tests {
                 .unwrap()["count"],
             0
         );
-        assert!(app
-            .recorded_gv()
-            .await
-            .iter()
-            .any(|e| e.link_type == "control" && e.subtype.contains("UpsertAccount")));
+        // Local-only tools (UpsertAccount, DeleteAccount) must NOT generate OSGP frames
+        let gv = app.recorded_gv().await;
+        assert!(
+            !gv.iter().any(|e| e.subtype.contains("UpsertAccount")),
+            "local tools must not send im_gateway.* subtypes"
+        );
     }
 
     #[tokio::test]
@@ -173,11 +174,28 @@ mod state_tests {
         )
         .await
         .unwrap();
+        // Verify canonical OSGP: SendRouteTextMessage → control / add_prompt
+        let gv = app.recorded_gv().await;
+        assert!(
+            gv.iter().any(|e| e.link_type == "control" && e.subtype == "add_prompt"),
+            "SendRouteTextMessage must emit control/add_prompt"
+        );
+        // No im_gateway.* subtypes allowed
+        assert!(
+            !gv.iter().any(|e| e.subtype.starts_with("im_gateway.")),
+            "no im_gateway.* subtypes allowed"
+        );
         assert_eq!(
             app.call_tool("chat", "ListRouteMessages", ex(json!({"routeID":route_id})))
                 .await
                 .unwrap()["count"],
             1
+        );
+        // Verify canonical OSGP: ListRouteMessages → request / runtime_session_messages
+        let gv = app.recorded_gv().await;
+        assert!(
+            gv.iter().any(|e| e.link_type == "request" && e.subtype == "runtime_session_messages"),
+            "ListRouteMessages must emit request/runtime_session_messages"
         );
         let up = app
             .call_tool(
@@ -203,6 +221,12 @@ mod state_tests {
             )
             .await
             .unwrap();
+        // Verify canonical OSGP: SendRouteUpload → control / add_prompt
+        let gv = app.recorded_gv().await;
+        assert!(
+            gv.iter().filter(|e| e.link_type == "control" && e.subtype == "add_prompt").count() >= 2,
+            "SendRouteUpload must also emit control/add_prompt"
+        );
         let asset = app
             .call_tool(
                 "chat",

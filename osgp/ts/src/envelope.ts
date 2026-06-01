@@ -22,64 +22,18 @@ import type {
   UploadSubtype,
 } from "./types.js";
 import { isHelloMessage } from "./hello.js";
+import { isCanonical, isOsgpType } from "./subtype-registry.js";
 
-// ── Type sets for validation ─────────────────────────────────────────
-
-const VALID_OSGP_TYPES: ReadonlySet<string> = new Set<string>([
-  "upload",
-  "control",
-  "request",
-  "response",
-]);
-
-const UPLOAD_SET: ReadonlySet<string> = new Set<string>([
-  "session_update",
-  "requestion_asked",
-  "requestion_resolved",
-  "requestion_updated",
-  "requestion_cancelled",
-]);
-
-const CONTROL_SET: ReadonlySet<string> = new Set<string>([
-  "add_prompt",
-  "abort_session",
-  "compact_session",
-  "create_session",
-  "rename_session",
-  "resume_session",
-  "requestion_respond",
-]);
-
-const REQUEST_SET: ReadonlySet<string> = new Set<string>([
-  "runtime_workspace_view_snapshot",
-  "runtime_requestion_snapshot",
-  "runtime_session_view_snapshot",
-  "runtime_session_messages",
-  // Compat aliases accepted on decode (not canonical):
-  "list_workspaces",
-  "read_workspace_info",
-  "list_session_messages",
-  "session_update_snapshot",
-  "requestion_snapshot",
-  "session_view_snapshot",
-  "session_update_subscribe",
-]);
+export { isOsgpType } from "./subtype-registry.js";
 
 // ── Type guard ───────────────────────────────────────────────────────
-
-/**
- * Type-guard: returns `true` if `value` looks like a valid OSGP type string.
- */
-export function isOsgpType(value: unknown): value is OsgpType {
-  return typeof value === "string" && VALID_OSGP_TYPES.has(value);
-}
 
 /**
  * Type-guard: returns `true` if `value` looks like an OsgpEnvelope.
  *
  * Checks:
  * - `linkType` is a valid `OsgpType`
- * - `subtype` is a non-empty string
+ * - `subtype` is canonical for that `linkType`
  * - `source` exists
  * - `payload` is a non-null object
  *
@@ -93,6 +47,7 @@ export function isOsgpEnvelope(value: unknown): value is OsgpEnvelope {
   if (typeof obj["subtype"] !== "string" || obj["subtype"].length === 0) {
     return false;
   }
+  if (!isCanonical(obj["linkType"], obj["subtype"])) return false;
   if (typeof obj["source"] !== "object" || obj["source"] === null) return false;
   if (typeof obj["payload"] !== "object" || obj["payload"] === null) {
     return false;
@@ -106,7 +61,7 @@ export function isUploadEnvelope(
   value: unknown,
 ): value is UploadEnvelope {
   if (!isOsgpEnvelope(value)) return false;
-  return value.linkType === "upload" && UPLOAD_SET.has(value.subtype);
+  return value.linkType === "upload" && isCanonical("upload", value.subtype);
 }
 
 /** Type-guard for control envelopes. */
@@ -114,7 +69,7 @@ export function isControlEnvelope(
   value: unknown,
 ): value is ControlEnvelope {
   if (!isOsgpEnvelope(value)) return false;
-  return value.linkType === "control" && CONTROL_SET.has(value.subtype);
+  return value.linkType === "control" && isCanonical("control", value.subtype);
 }
 
 /** Type-guard for request envelopes. */
@@ -122,7 +77,7 @@ export function isRequestEnvelope(
   value: unknown,
 ): value is RequestEnvelope {
   if (!isOsgpEnvelope(value)) return false;
-  return value.linkType === "request" && REQUEST_SET.has(value.subtype);
+  return value.linkType === "request" && isCanonical("request", value.subtype);
 }
 
 /** Type-guard for response envelopes. */
@@ -130,7 +85,7 @@ export function isResponseEnvelope(
   value: unknown,
 ): value is ResponseEnvelope {
   if (!isOsgpEnvelope(value)) return false;
-  return value.linkType === "response";
+  return value.linkType === "response" && isCanonical("response", value.subtype);
 }
 
 // ── Shared envelope builder internals ────────────────────────────────

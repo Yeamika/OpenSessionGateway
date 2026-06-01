@@ -38,6 +38,8 @@ pub struct RouteDecision {
     pub blocked_by_filter: Option<String>,
     /// Route hops accumulated so far.
     pub hops: Vec<String>,
+    /// ID of the rule that matched (if any). For diagnostics/audit.
+    pub matched_rule_id: Option<String>,
 }
 
 // ── ForwardMetrics (internal) ───────────────────────────────────────
@@ -47,6 +49,7 @@ pub(super) struct ForwardMetrics {
     pub(super) forwarded_total: AtomicU64,
     pub(super) dropped_total: AtomicU64,
     pub(super) filtered_total: AtomicU64,
+    pub(super) rule_dropped_total: AtomicU64,
 }
 
 impl ForwardMetrics {
@@ -61,6 +64,10 @@ impl ForwardMetrics {
     pub(super) fn record_filtered(&self) {
         self.filtered_total.fetch_add(1, Ordering::Relaxed);
     }
+
+    pub(super) fn record_rule_drop(&self) {
+        self.rule_dropped_total.fetch_add(1, Ordering::Relaxed);
+    }
 }
 
 /// A point-in-time snapshot of forwarding metrics.
@@ -69,6 +76,7 @@ pub struct ForwardMetricsSnapshot {
     pub forwarded_total: u64,
     pub dropped_total: u64,
     pub filtered_total: u64,
+    pub rule_dropped_total: u64,
 }
 
 // ── Helper trait ────────────────────────────────────────────────────

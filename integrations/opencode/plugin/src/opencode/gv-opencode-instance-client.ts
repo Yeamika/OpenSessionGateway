@@ -2,8 +2,8 @@
  * GvOpencodeInstanceClient — per-directory instance for GlassVein opencode plugin.
  *
  * OSGP upload-only wire contract:
- *   - session_update: all session state + metadata (displayID, workspace, title)
- *   - requestion_asked: unified permission/question (with requestionType field)
+ *   - session_update: sessionID + state + compact metadata
+ *   - requestion_asked: unified permission/question with sessionID + requestID
  *   - requestion_resolved: answered/rejected/failed
  *
  * No client.content.executing, no deprecated sendOpencodeEvent.
@@ -37,7 +37,8 @@ import { refreshSessionTitle } from "./runtime/refresh-session-title.js"
 import { VeinManager, type WriteLog, type ManagerInstance } from "./vein-manager.js"
 import { buildPermissionAskedPayload } from "./ws-event/Permission.js"
 import { buildQuestionAskedPayload, buildQuestionUpdatedPayload } from "./ws-event/Question.js"
-import { readVeinEnvOverrides, writeVeinConfig } from "./runtime/config.js"
+import { buildVeinRuntimeConfig, readVeinEnvOverrides, writeVeinConfig } from "./runtime/config.js"
+import { updateSessionState } from "./ws-event/Snapshot.js"
 import { type OpencodeClient } from "@opencode-ai/sdk/v2"
 
 // ── Helpers ───────────────────────────────────────────────────────────
@@ -183,29 +184,30 @@ export class GvOpencodeInstanceClient {
     title?: string,
     force = false,
   ): boolean {
-    const cwd = text(this.currentClientInfo.cwd)
-    const displayID = (() => {
-      const q = this.query()
-      return q && typeof q.displayID === "string" ? q.displayID : undefined
-    })()
-    const row = this.sessionStore.get(sessionID)
+    const clean = text(sessionID)
+    if (!clean) return false
+
+    const row = this.sessionStore.get(clean)
 
     // Dedup key
-    const key = [cwd, displayID || "", sessionID, title || "", row?.state || "", row?.reason || ""].join("|")
+    const key = [clean, row?.state || "", row?.reason || "", row?.extraInfo || ""].join("|")
     if (!force && key === this.lastUploadedSessionKey) return false
     this.lastUploadedSessionKey = key
 
+    const state = row?.state || "idle"
+    const metadata = row?.reason || row?.extraInfo
+      ? {
+        ...(row?.reason ? { reason: row.reason } : {}),
+        ...(row?.extraInfo ? { extraInfo: row.extraInfo } : {}),
+      }
+      : undefined
     const payload: Record<string, unknown> = {
-      sessionId: sessionID,
-      runtimeId: this.runtimeIDForMcp || undefined,
-      state: row?.state || "idle",
+      sessionID: clean,
+      state,
     }
-    if (title) payload.title = title
-    if (cwd) payload.instanceWorkspaceDirectory = cwd
-    if (displayID) payload.displayID = displayID
-    if (row?.reason) {
-      payload.metadata = { reason: row.reason, ...(row.extraInfo ? { extraInfo: row.extraInfo } : {}) }
-    }
+    if (metadata) payload.metadata = metadata
+
+    updateSessionState(clean, state, row?.reason || null, metadata || null)
 
     return VeinManager.upload("session_update", payload)
   }
@@ -358,26 +360,18 @@ export class GvOpencodeInstanceClient {
     }
     VeinManager.register(this.key(), instance)
 
+    const config = await buildVeinRuntimeConfig()
+    const nodeId = this.key().split(/[\\/]/).filter(Boolean).pop() || "unknown"
     const result = await VeinManager.start(instance, {
-      routerUrl: this.readRouterUrl(),
-      nodeId: this.key().split(/[\\/]/).filter(Boolean).pop() || "unknown",
+      routerUrl: config.routerUrl,
+      internalRouter: config.internalRouter,
+      nodeId,
       domain: "opencode",
-      runtime: this.key().split(/[\\/]/).filter(Boolean).pop() || "unknown",
+      runtime: config.runtimeID || nodeId,
     })
     this.runtimeIDForMcp = result.runtimeID
     this.routerUrlForMcp = result.routerUrl
     this.writeLog = result.writeLog
-
-    // Initial session_update for workspace presence
-    const cwd = text(this.currentClientInfo.cwd)
-    if (cwd) {
-      VeinManager.upload("session_update", {
-        sessionId: "",
-        runtimeId: this.runtimeIDForMcp || undefined,
-        state: "idle",
-        instanceWorkspaceDirectory: cwd,
-      })
-    }
   }
 
   stop() {
@@ -388,12 +382,6 @@ export class GvOpencodeInstanceClient {
   }
 
   // ── Config helpers ─────────────────────────────────────────────────
-
-  private readRouterUrl(): string {
-    const envUrl = process.env.GV_ROUTER_URL || process.env.OSG_WS_URL || ""
-    if (envUrl.trim()) return envUrl.trim()
-    return "ws://127.0.0.1:7200"
-  }
 
   getRuntimeID() { return this.runtimeIDForMcp }
   getRouterUrl() { return this.routerUrlForMcp }

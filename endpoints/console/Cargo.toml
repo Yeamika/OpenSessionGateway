@@ -8,6 +8,7 @@ description = "GlassVein htop-like TUI console endpoint for session viewing and 
 [dependencies]
 anyhow.workspace = true
 futures-util.workspace = true
+serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 osgp.workspace = true
 surface.workspace = true
@@ -15,3 +16,4 @@ tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread", "sign
 tokio-tungstenite.workspace = true
 tracing.workspace = true
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+uuid.workspace = true

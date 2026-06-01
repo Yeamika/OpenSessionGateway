@@ -7,6 +7,8 @@ use std::fmt;
 pub enum ValidationError {
     EmptyField { field: String },
     FieldMismatch { field: String, reason: String },
+    /// Subtype not in the canonical registry for the given link type.
+    UnknownSubtype { link_type: String, subtype: String },
 }
 
 impl fmt::Display for ValidationError {
@@ -15,6 +17,13 @@ impl fmt::Display for ValidationError {
             Self::EmptyField { field } => write!(f, "field '{}' must not be empty", field),
             Self::FieldMismatch { field, reason } => {
                 write!(f, "field '{}': {}", field, reason)
+            }
+            Self::UnknownSubtype { link_type, subtype } => {
+                write!(
+                    f,
+                    "unknown subtype '{}' for link type '{}' (not in canonical registry)",
+                    subtype, link_type
+                )
             }
         }
     }

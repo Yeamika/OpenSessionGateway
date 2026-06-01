@@ -1,6 +1,22 @@
+//! Read request builder for the console endpoint.
+//!
+//! Builds ReadRequest messages for canonical read operations. These are
+//! **outbound** messages sent from the console to query runtime state.
+//!
+//! ## Canonical Request Subtypes
+//!
+//! The following request subtypes are recognized:
+//! - `runtime_workspace_view_snapshot` — Get workspace overview
+//! - `runtime_requestion_snapshot` — Get pending requestions
+//! - `runtime_session_view_snapshot` — Get session details
+//! - `runtime_session_messages` — Get session message history
+
 use anyhow::{bail, Result};
 use osgp::{ReadOperation, ReadRequest, SessionAddress, SessionId};
 
+/// Build a read request for a canonical request command.
+///
+/// Returns an error if the command is not in the canonical request subtype list.
 pub fn build_request(
     command: &str,
     source: SessionAddress,

@@ -10,7 +10,6 @@
 
 import { createOpencodeClient, type OpencodeClient } from "@opencode-ai/sdk/v2/client"
 import { applyOsgMcpConfig } from "./opencode/runtime/mcp.js"
-import { readEnabledMcpMetadata } from "./opencode/runtime/mcp.js"
 import {
   OSG_TUI_STATUS_EVENT,
   OSG_TUI_CONFIG_SAVE_EVENT,
@@ -20,7 +19,8 @@ import {
 import { createQuery } from "./opencode/query.js"
 import { GvOpencodeInstanceClient } from "./opencode/gv-opencode-instance-client.js"
 import { VeinManager } from "./opencode/vein-manager.js"
-import { buildVeinRuntimeConfig, readVeinConfig, writeVeinConfig, readVeinEnvOverrides } from "./opencode/runtime/config.js"
+
+export * from "./index.js"
 
 const pluginName = "@opensessiongateway/opencode-vein-plugin"
 const pluginSlug = "opencode-vein-plugin"
@@ -154,4 +154,9 @@ export const GvVeinPlugin = async (ctx: any) => {
   }
 }
 
-export default GvVeinPlugin
+export const GvVeinPluginModule = {
+  id: pluginName,
+  server: GvVeinPlugin,
+}
+
+export default GvVeinPluginModule

@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "description": "GlassVein router persistent grants for session-control-endpoint. Use with: glassvein-router --state-file grants-session-control.json",
+  "peers": [
+    {
+      "peer_id": "session-control-endpoint",
+      "protocol_version": 1,
+      "grants": {
+        "announce.route": true,
+        "control.add_prompt": true,
+        "session.list": true,
+        "session.read": true,
+        "route.list": true
+      },
+      "denied": {
+        "admin.rules.write": true,
+        "admin.routes.write": true
+      },
+      "notes": [
+        "announce.route: needed to register this endpoint with router",
+        "control.add_prompt: needed to inject prompts into sessions",
+        "session.list: needed to enumerate active sessions",
+        "session.read: needed to read session state and messages",
+        "route.list: needed for read-only route discovery",
+        "admin.rules.write: EXPLICITLY DENIED — use Console endpoint or admin.request pattern for rule management",
+        "admin.routes.write: EXPLICITLY DENIED — same reason as above"
+      ]
+    }
+  ]
+}

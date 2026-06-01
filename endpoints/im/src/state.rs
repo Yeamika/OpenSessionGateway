@@ -15,28 +15,6 @@ use crate::provider;
 impl AppState {
     pub async fn call_tool(&self, channel: &str, tool: &str, args: Value) -> Result<Value> {
         require_executor(tool, &args)?;
-        let mutating = matches!(
-            tool,
-            "ReloadConfig"
-                | "UpsertAccount"
-                | "DeleteAccount"
-                | "CreateAccountChat"
-                | "DeleteAccountChat"
-                | "AddAccountChatMembers"
-                | "UpsertSessionBinding"
-                | "CreateSessionBinding"
-                | "DeleteSessionBinding"
-                | "UpsertRoute"
-                | "DeleteRoute"
-                | "SendRouteTextMessage"
-                | "RequestUpload"
-                | "SendRouteUpload"
-                | "RequestDownload"
-        );
-        let _ = self
-            .gv
-            .send_tool(channel, tool, args.clone(), mutating)
-            .await;
         match (channel, tool) {
             ("control", "GetGatewayInfo") => self.gateway_info().await,
             ("control", "ListProviders") => {

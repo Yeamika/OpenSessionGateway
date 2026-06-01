@@ -4,5 +4,6 @@
   "address": "<domain>/<runtime>/<session>",
   "webAddr": "<listen-host>:<listen-port>",
   "noWeb": false,
-  "seedDemo": false
+  "seedDemo": false,
+  "legacyHello": false
 }

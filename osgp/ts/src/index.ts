@@ -74,10 +74,23 @@ export type {
 } from "./router-wire.js";
 
 export {
+  OSGP_TYPES,
   UPLOAD_SUBTYPES,
   CONTROL_SUBTYPES,
   REQUEST_SUBTYPES,
-} from "./types.js";
+  RESPONSE_SUBTYPES,
+  REQUEST_COMPAT_ALIASES,
+  compatAliases,
+  canonicalSubtypesFor,
+  isOsgpType,
+  isCanonical,
+  validateCanonical,
+  normalizeSubtype,
+  isUploadSubtype,
+  isControlSubtype,
+  isRequestSubtype,
+  isResponseSubtype,
+} from "./subtype-registry.js";
 
 // ── Hello ────────────────────────────────────────────────────────────
 
@@ -87,7 +100,6 @@ export type { HelloOptions } from "./hello.js";
 // ── Envelope ─────────────────────────────────────────────────────────
 
 export {
-  isOsgpType,
   isOsgpEnvelope,
   isUploadEnvelope,
   isControlEnvelope,

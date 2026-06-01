@@ -8,6 +8,7 @@ use crate::address::{RouteTarget, SessionAddress};
 use crate::link_type::LinkType;
 use crate::payload::Payload;
 use crate::read::{ReadRequest, ReadResponse};
+use crate::subtype_registry;
 use crate::validation::{validate_non_empty, ValidationError};
 
 // ── SessionEnvelope (compat: legacy `kind` + canonical linkType/subtype) ───
@@ -63,6 +64,9 @@ impl SessionEnvelope {
     pub fn validate(&self) -> Result<(), ValidationError> {
         validate_non_empty("type", &self.link_type)?;
         validate_non_empty("subtype", &self.subtype)?;
+        // Validate against canonical subtype registry.
+        // This rejects dynamic/non-business subtypes like im_gateway.*, timer.fired, etc.
+        subtype_registry::validate_canonical(&self.link_type, &self.subtype)?;
         Ok(())
     }
 }
@@ -74,6 +78,10 @@ impl SessionEnvelope {
 /// - `requestion.X` → `("upload", "requestion_X")`
 /// - `session_update` → `("upload", "session_update")`
 /// - everything else → pass-through (preserves raw kind)
+///
+/// **Note**: This function does NOT validate against the canonical subtype
+/// registry. Callers should also call [`validate_envelope_subtype`] to ensure
+/// the resulting pair is in the registry.
 pub(crate) fn canonical_type_subtype(kind: &str, payload: &Value) -> (String, String) {
     if kind.starts_with("control.") {
         let subtype = payload
@@ -90,6 +98,19 @@ pub(crate) fn canonical_type_subtype(kind: &str, payload: &Value) -> (String, St
             _ => (kind.into(), kind.into()),
         }
     }
+}
+
+/// Validate that a `(link_type, subtype)` pair is in the canonical registry.
+///
+/// Returns `Ok(())` if the pair is canonical, or `Err(ValidationError)` if not.
+///
+/// Use this after calling [`canonical_type_subtype`] to ensure the derived
+/// pair is valid for business messages.
+pub fn validate_envelope_subtype(
+    link_type: &str,
+    subtype: &str,
+) -> Result<(), ValidationError> {
+    subtype_registry::validate_canonical(link_type, subtype)
 }
 
 // ── Envelope (canonical typed) ───────────────────────────────────────
@@ -141,6 +162,11 @@ impl Envelope {
                 reason: "does not match payload subtype".to_string(),
             });
         }
+        // Validate against canonical subtype registry.
+        subtype_registry::validate_canonical(
+            self.link_type.as_wire(),
+            &self.subtype,
+        )?;
         Ok(())
     }
 }

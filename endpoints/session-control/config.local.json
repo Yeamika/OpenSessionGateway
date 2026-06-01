@@ -1,0 +1,15 @@
+{
+  "listen": "127.0.0.1:7310",
+  "router_url": "ws://127.0.0.1:7200",
+  "node_id": "session-control-endpoint",
+  "source": {
+    "domain": "surface",
+    "runtime": "session-control-endpoint",
+    "session": "sc-test-session"
+  },
+  "target": {
+    "domain": "domain-a",
+    "runtime": "target-runtime",
+    "session": "target-session"
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "nodeId": "mailbox-endpoint",
+  "routerUrl": "ws://127.0.0.1:7202",
+  "address": "west/mailbox-rt/mailbox",
+  "webAddr": "127.0.0.1:7319",
+  "noWeb": false,
+  "seedDemo": false,
+  "legacyHello": false
+}

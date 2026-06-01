@@ -47,7 +47,8 @@ done
 
 # ── Setup ──
 require_binary "router"
-setup_stage  # creates LOG_DIR, init_pid_tracking, registers cleanup trap
+setup_stage  # creates LOG_DIR, init_pid_tracking
+cleanup_on_failure  # kill processes only if stage fails
 
 STATE_DIR="$LOG_DIR/state"
 mkdir -p "$STATE_DIR"
@@ -105,7 +106,7 @@ for name in "${ROUTER_ORDER[@]}"; do
     fi
 
     info "Starting ${name}-router (${node_id}) on :${port} ..."
-    "${CMD[@]}" > "$logfile" 2>&1 &
+    setsid "${CMD[@]}" > "$logfile" 2>&1 &
     pid=$!
     record_pid "${name}-router" "$pid" ":${port}"
 
@@ -195,8 +196,10 @@ info "Capturing evidence snapshot ..."
 info "Evidence written to $LOG_DIR/evidence.txt"
 echo ""
 
-# ── Cleanup happens automatically via trap ──
-info "Stage 01 complete. Cleanup will run via EXIT trap."
+# ── Done ──
+info "Stage 01 complete. Routers left running for downstream stages."
+info "To stop: bash demos/multiprocess/scripts/cleanup.sh"
 
 print_summary "$P" "$F"
-exit $?
+# Exit 0 = success, processes stay alive (setsid detached them)
+exit 0

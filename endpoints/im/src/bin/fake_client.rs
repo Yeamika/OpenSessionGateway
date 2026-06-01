@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use futures_util::{SinkExt, StreamExt};
-use osgp::LinkMessage;
+use osgp::{LinkHandshake, LinkMessage};
 use serde_json::json;
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 
@@ -13,13 +13,25 @@ async fn main() -> Result<()> {
     let router_url = arg("--router-url", "ws://127.0.0.1:7200");
     let node_id = arg("--node-id", "im-fake-client");
     let address = arg("--address", "domain-a/im-backend/session");
-    let hello = json!({"nodeId":node_id,"role":"endpoint","addresses":[parse_addr(&address)?],"capabilities":["im_fake_client"]});
+    let session_addr = parse_addr(&address)?;
+    // vNext handshake: LinkHandshake (no legacy role/capabilities)
+    let handshake = LinkHandshake::new(&node_id)
+        .with_metadata(json!({"endpoint":"im-fake-client"}));
     let (ws, _) = connect_async(&router_url)
         .await
         .with_context(|| format!("connect {router_url}"))?;
     let (mut writer, mut reader) = ws.split();
-    writer.send(Message::Text(hello.to_string().into())).await?;
-    println!("fake-client connected router={router_url} address={address}");
+    writer.send(Message::Text(serde_json::to_string(&handshake)?.into())).await?;
+    // Wait for handshake reply
+    if let Some(Ok(msg)) = reader.next().await {
+        if let Message::Text(text) = &msg {
+            println!("fake-client handshake-reply: {text}");
+        }
+    }
+    // Announce address
+    let announce = LinkMessage::Announce { address: session_addr, distance: 0 };
+    writer.send(Message::Text(serde_json::to_string(&announce)?.into())).await?;
+    println!("fake-client connected router={router_url} address={address} (LinkHandshake)");
     while let Some(msg) = reader.next().await {
         let msg = msg?;
         match msg {

@@ -20,6 +20,7 @@ import { randomUUID } from "node:crypto"
 
 import type {
   OsgpType,
+  ResponseSubtype,
   UploadSubtype,
 } from "@opensessiongateway/osgp"
 
@@ -151,7 +152,7 @@ export class GlassveinWsClient extends EventEmitter {
   }
 
   private sendCanonicalResponse(env: RouterSessionEnvelope, payload: Record<string, unknown>): boolean {
-    return this.sendLinkMessage(createResponseLinkMessage(env.subtype, this.address, env.source, payload, {
+    return this.sendLinkMessage(createResponseLinkMessage(env.subtype as ResponseSubtype, this.address, env.source, payload, {
       messageId: env.id,
       ttl: 32,
       routeHops: [],

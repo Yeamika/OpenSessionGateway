@@ -61,9 +61,9 @@ crates/surface/ → surface 库（observer + control + query）
 
 ```text
 integrations/opencode/plugin/ → @opensessiongateway/opencode-vein-plugin（TypeScript 插件）
-integrations/osg/plugins/     → OSG MCP 插件（runtime-control、session-bridge、timer-scheduler、IM-gateway）
 ```
 
+- `integrations/osg/plugins/` 旧 TS OSG MCP 插件链（runtime-control、session-bridge、timer-scheduler、IM-gateway）已移除；对应能力应迁移/保留在 Rust endpoints 或运行时内置 MCP 工具中，不要恢复该目录。
 - `packages/glassvein-router/` 保留为 npm wrapper（内含 Rust 二进制 stage 脚本）。
 
 ### 其他

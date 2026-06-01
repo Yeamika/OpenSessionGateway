@@ -18,6 +18,9 @@ pub struct CliConfig {
     /// When true, seed the cache with synthetic requestion data after connecting.
     /// For demo/testing only — the endpoint is passive by default.
     pub seed_demo: bool,
+    /// When true, send the legacy HelloMessage handshake instead of LinkHandshake.
+    /// Default (false) uses LinkHandshake (OSGP vNext).
+    pub legacy_hello: bool,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -29,6 +32,7 @@ struct FileConfig {
     web_addr: Option<String>,
     no_web: Option<bool>,
     seed_demo: Option<bool>,
+    legacy_hello: Option<bool>,
 }
 
 /// Parse command-line arguments into a `CliConfig`.
@@ -51,6 +55,7 @@ pub fn parse_args() -> Result<CliConfig> {
             "--web-addr" => overrides.web_addr = Some(take_value(&mut args, "--web-addr")?),
             "--no-web" => overrides.no_web = Some(true),
             "--seed-demo" => overrides.seed_demo = Some(true),
+            "--legacy-hello" => overrides.legacy_hello = Some(true),
             other => bail!("unknown argument '{other}', use --help"),
         }
     }
@@ -76,6 +81,7 @@ pub fn default_config() -> CliConfig {
         no_web: false,
         config_path: None,
         seed_demo: false,
+        legacy_hello: false,
     }
 }
 
@@ -114,6 +120,9 @@ fn apply_file_config(config: &mut CliConfig, file: &FileConfig) -> Result<()> {
     }
     if let Some(value) = file.seed_demo {
         config.seed_demo = value;
+    }
+    if let Some(value) = file.legacy_hello {
+        config.legacy_hello = value;
     }
     Ok(())
 }
@@ -171,6 +180,7 @@ fn print_help() {
          \x20   --web-addr <host:port>  Web/MCP API listen address [default: 127.0.0.1:7318]\n\
          \x20   --no-web                Disable Web/MCP API server\n\
          \x20   --seed-demo             Seed cache with synthetic requestion data (demo only)\n\
+         \x20   --legacy-hello          Send legacy HelloMessage instead of LinkHandshake (OSGP vNext)\n\
          \x20   -h, --help              Show this help"
     );
 }
@@ -189,6 +199,7 @@ mod tests {
             "domain-a/requestion-endpoint/requestion-endpoint"
         );
         assert!(config.config_path.is_none());
+        assert!(!config.legacy_hello);
         validate_config(&config).unwrap();
     }
 
@@ -203,7 +214,8 @@ mod tests {
             "address":"domain-a/requestion-test/ses-test",
             "webAddr":"127.0.0.1:17318",
             "noWeb":false,
-            "seedDemo":false
+            "seedDemo":false,
+            "legacyHello":true
         }"#,
         )
         .unwrap();
@@ -218,6 +230,7 @@ mod tests {
             format_address(&reloaded.address),
             "domain-a/requestion-test/ses-test"
         );
+        assert!(reloaded.legacy_hello);
         let _ = fs::remove_file(path);
     }
 

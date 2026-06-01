@@ -1,30 +1,53 @@
 #!/usr/bin/env bash
-# GlassVein 12-process demo: complex topology with four-link coverage.
+# GlassVein multi-process demo: current endpoint topology graph.
+#
+# NOTE: this file's TOPOLOGY output is the current target graph. The launch and
+# verification implementation is intentionally left for the follow-up demo refresh
+# pass.
 #
 # Usage:
 #   bash demo-topology-tree.sh TOPOLOGY              # print tree + coverage matrix
 #   bash demo-topology-tree.sh ALL                   # print tree, launch, verify, produce evidence
 #   bash demo-topology-tree.sh VERIFY <log-dir>      # verify an existing log dir
 #
-# Topology (12 processes):
+# Target topology graph:
 #
 #   root-router :7200
-#   ├─ root-viewer          (surface-viewer, upload fan-out)
+#   ├─ console-endpoint      (TUI/control/admin/read, observes canonical traffic)
 #   ├─ east-router :7201
-#   │  ├─ alpha-client      (client endpoint, --stay-alive)
-#   │  ├─ east-viewer        (surface-viewer, upload fan-out)
-#   │  └─ control-endpoint   (control + request driver, one-shot)
+#   │  ├─ alpha-client      (bash-clientdummy instance)
+#   │  │  ├─ session-alpha-1
+#   │  │  └─ session-alpha-2
+#   │  ├─ delta-client      (bash-clientdummy instance)
+#   │  │  └─ session-delta-1
+#   │  ├─ session-control-endpoint (runtime/session MCP bridge)
+#   │  └─ timer-endpoint     (scheduled control/add_prompt producer)
 #   └─ west-router :7202
-#      ├─ beta-client        (client endpoint, --stay-alive)
+#      ├─ beta-client        (bash-clientdummy instance)
+#      │  ├─ session-beta-1
+#      │  └─ session-beta-2
 #      ├─ requestion-endpoint (requestion cache + upload listener, --seed-demo)
+#      ├─ mailbox-endpoint   (mailbox store-forward + reminder control/add_prompt)
 #      └─ nested-router :7203
-#         ├─ gamma-client    (client endpoint, --stay-alive)
-#         └─ nested-viewer   (surface-viewer, upload fan-out)
+#         ├─ gamma-client    (bash-clientdummy instance)
+#         │  ├─ session-gamma-1
+#         │  └─ session-gamma-2
+#         ├─ omega-client    (bash-clientdummy instance)
+#         │  └─ session-omega-1
+#         └─ im-endpoint     (IM gateway endpoint, control/add_prompt bridge)
 #
-# Registered addresses (from client defaults):
-#   alpha → east/runtime-alpha/session-alpha
-#   beta  → west/runtime-beta/session-beta
-#   gamma → nested/runtime-gamma/session-gamma
+# Target business session addresses:
+#   alpha → east/runtime-alpha/session-alpha-1, east/runtime-alpha/session-alpha-2
+#   delta → east/runtime-delta/session-delta-1
+#   beta  → west/runtime-beta/session-beta-1, west/runtime-beta/session-beta-2
+#   gamma → nested/runtime-gamma/session-gamma-1, nested/runtime-gamma/session-gamma-2
+#   omega → nested/runtime-omega/session-omega-1
+#   console → domain-a/console-runtime/console
+#   session-control → surface/session-control-endpoint/*
+#   timer → domain-a/timer-endpoint/timer
+#   requestion → west/requestion-endpoint/requestion-endpoint
+#   mailbox → domain-a/mailbox-endpoint/mailbox
+#   im → domain-a/im-endpoint/session + domain-a/im-backend/session
 
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -90,30 +113,51 @@ wait_for_log() {
     return 1
 }
 
-# ── Registered addresses (MUST match client defaults) ──
-ALPHA_ADDR="east/runtime-alpha/session-alpha"
-BETA_ADDR="west/runtime-beta/session-beta"
-GAMMA_ADDR="nested/runtime-gamma/session-gamma"
+# ── Registered addresses (MUST match bash-clientdummy defaults) ──
+ALPHA_ADDR_1="east/runtime-alpha/session-alpha-1"
+ALPHA_ADDR_2="east/runtime-alpha/session-alpha-2"
+DELTA_ADDR="east/runtime-delta/session-delta-1"
+BETA_ADDR_1="west/runtime-beta/session-beta-1"
+BETA_ADDR_2="west/runtime-beta/session-beta-2"
+GAMMA_ADDR_1="nested/runtime-gamma/session-gamma-1"
+GAMMA_ADDR_2="nested/runtime-gamma/session-gamma-2"
+OMEGA_ADDR="nested/runtime-omega/session-omega-1"
+
+# State-file directory
+STATE_DIR="$(cd "$(dirname "$0")" && pwd)/demos/multiprocess/state"
 
 # ── Topology tree ────────────────────────────────────────────────────
 
 print_topology_tree() {
     echo -e "${BLUE}╔════════════════════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${BLUE}║${NC}           GlassVein 12-Process Live Demo Topology                        ${BLUE}║${NC}"
+    echo -e "${BLUE}║${NC}           GlassVein Multi-Client Target Demo Topology                    ${BLUE}║${NC}"
     echo -e "${BLUE}╚════════════════════════════════════════════════════════════════════════════╝${NC}"
     echo ""
+    echo -e "${YELLOW}NOTE:${NC} topology graph refreshed to current Rust endpoints; launch script refresh is pending."
+    echo ""
     echo -e "${CYAN}root-router${NC} ws://127.0.0.1:7200"
-    echo -e "├─ ${MAGENTA:-}root-viewer${NC}          (surface-viewer, upload fan-out)"
+    echo -e "├─ ${GREEN}console-endpoint${NC}      (TUI/control/admin/read observer)"
     echo -e "├─ ${CYAN}east-router${NC} ws://127.0.0.1:7201"
-    echo -e "│  ├─ ${GREEN}alpha-client${NC}        (client endpoint, --stay-alive)"
-    echo -e "│  ├─ ${MAGENTA:-}east-viewer${NC}          (surface-viewer, upload fan-out)"
-    echo -e "│  └─ ${YELLOW}control-endpoint${NC}   (control + request driver)"
+    echo -e "│  ├─ ${GREEN}alpha-client${NC}        (bash-clientdummy instance)"
+    echo -e "│  │  ├─ session-alpha-1"
+    echo -e "│  │  └─ session-alpha-2"
+    echo -e "│  ├─ ${GREEN}delta-client${NC}        (bash-clientdummy instance)"
+    echo -e "│  │  └─ session-delta-1"
+    echo -e "│  ├─ ${GREEN}session-control-endpoint${NC} (runtime/session MCP bridge)"
+    echo -e "│  └─ ${GREEN}timer-endpoint${NC}      (scheduled control/add_prompt producer)"
     echo -e "└─ ${CYAN}west-router${NC} ws://127.0.0.1:7202"
-    echo -e "   ├─ ${GREEN}beta-client${NC}          (client endpoint, --stay-alive)"
+    echo -e "   ├─ ${GREEN}beta-client${NC}          (bash-clientdummy instance)"
+    echo -e "   │  ├─ session-beta-1"
+    echo -e "   │  └─ session-beta-2"
     echo -e "   ├─ ${BLUE}requestion-endpoint${NC}   (requestion cache + upload listener)"
+    echo -e "   ├─ ${GREEN}mailbox-endpoint${NC}     (store-forward + reminder add_prompt)"
     echo -e "   └─ ${CYAN}nested-router${NC} ws://127.0.0.1:7203"
-    echo -e "      ├─ ${GREEN}gamma-client${NC}      (client endpoint, --stay-alive)"
-    echo -e "      └─ ${MAGENTA:-}nested-viewer${NC}       (surface-viewer, upload fan-out)"
+    echo -e "      ├─ ${GREEN}gamma-client${NC}      (bash-clientdummy instance)"
+    echo -e "      │  ├─ session-gamma-1"
+    echo -e "      │  └─ session-gamma-2"
+    echo -e "      ├─ ${GREEN}omega-client${NC}      (bash-clientdummy instance)"
+    echo -e "      │  └─ session-omega-1"
+    echo -e "      └─ ${GREEN}im-endpoint${NC}       (IM gateway, control/add_prompt bridge)"
     echo ""
 
     # ── Process list ──
@@ -123,17 +167,19 @@ print_topology_tree() {
     echo -e "${BLUE}│${NC}  2. east-router       :7201  upstream=root-router                         ${BLUE}│${NC}"
     echo -e "${BLUE}│${NC}  3. west-router       :7202  upstream=root-router                         ${BLUE}│${NC}"
     echo -e "${BLUE}│${NC}  4. nested-router     :7203  upstream=west-router                         ${BLUE}│${NC}"
-    echo -e "${BLUE}│${NC} Clients (3):                                                               ${BLUE}│${NC}"
-    echo -e "${BLUE}│${NC}  5. alpha-client             connect=east-router  addr=$ALPHA_ADDR     ${BLUE}│${NC}"
-    echo -e "${BLUE}│${NC}  6. beta-client              connect=west-router  addr=$BETA_ADDR      ${BLUE}│${NC}"
-    echo -e "${BLUE}│${NC}  7. gamma-client             connect=nested-router addr=$GAMMA_ADDR   ${BLUE}│${NC}"
-    echo -e "${BLUE}│${NC} Viewers (3):                                                               ${BLUE}│${NC}"
-    echo -e "${BLUE}│${NC}  8. root-viewer              connect=root-router                           ${BLUE}│${NC}"
-    echo -e "${BLUE}│${NC}  9. east-viewer              connect=east-router                           ${BLUE}│${NC}"
-    echo -e "${BLUE}│${NC} 10. nested-viewer            connect=nested-router                         ${BLUE}│${NC}"
-    echo -e "${BLUE}│${NC} Endpoints (2):                                                             ${BLUE}│${NC}"
-    echo -e "${BLUE}│${NC} 11. control-endpoint         connect=east-router                           ${BLUE}│${NC}"
-    echo -e "${BLUE}│${NC} 12. requestion-endpoint      connect=west-router                           ${BLUE}│${NC}"
+    echo -e "${BLUE}│${NC} bash-clientdummy instances (5), business sessions (8):                 ${BLUE}│${NC}"
+    echo -e "${BLUE}│${NC}  5. alpha-client             east/runtime-alpha/{session-alpha-1,session-alpha-2} ${BLUE}│${NC}"
+    echo -e "${BLUE}│${NC}  6. delta-client             east/runtime-delta/session-delta-1        ${BLUE}│${NC}"
+    echo -e "${BLUE}│${NC}  7. beta-client              west/runtime-beta/{session-beta-1,session-beta-2} ${BLUE}│${NC}"
+    echo -e "${BLUE}│${NC}  8. gamma-client             nested/runtime-gamma/{session-gamma-1,session-gamma-2} ${BLUE}│${NC}"
+    echo -e "${BLUE}│${NC}  9. omega-client             nested/runtime-omega/session-omega-1      ${BLUE}│${NC}"
+    echo -e "${BLUE}│${NC} Endpoints (6):                                                             ${BLUE}│${NC}"
+    echo -e "${BLUE}│${NC} 10. console-endpoint         connect=root-router  addr=domain-a/console-runtime/console ${BLUE}│${NC}"
+    echo -e "${BLUE}│${NC} 11. session-control-endpoint connect=east-router  addr=surface/session-control-endpoint/* ${BLUE}│${NC}"
+    echo -e "${BLUE}│${NC} 12. timer-endpoint           connect=east-router  addr=domain-a/timer-endpoint/timer ${BLUE}│${NC}"
+    echo -e "${BLUE}│${NC} 13. requestion-endpoint      connect=west-router  addr=west/requestion-endpoint/requestion-endpoint ${BLUE}│${NC}"
+    echo -e "${BLUE}│${NC} 14. mailbox-endpoint         connect=west-router  addr=domain-a/mailbox-endpoint/mailbox ${BLUE}│${NC}"
+    echo -e "${BLUE}│${NC} 15. im-endpoint              connect=nested-router addr=domain-a/im-endpoint/session ${BLUE}│${NC}"
     echo -e "${BLUE}└────────────────────────────────────────────────────────────────────────────┘${NC}"
     echo ""
 
@@ -142,23 +188,24 @@ print_topology_tree() {
     echo -e "${BLUE}│${NC} Four-link coverage matrix                                                 ${BLUE}│${NC}"
     echo -e "${BLUE}├────────────────────────────────────────────────────────────────────────────┤${NC}"
     echo -e "${BLUE}│${NC}                                                                          ${BLUE}│${NC}"
-    echo -e "${BLUE}│${NC}  upload (fan-out to viewer endpoints by capability):                     ${BLUE}│${NC}"
-    echo -e "${BLUE}│${NC}    session_update            alpha/gamma → root/east/nested viewers       ${BLUE}│${NC}"
+    echo -e "${BLUE}│${NC}  upload (observed by console/session-control via routing or rules):       ${BLUE}│${NC}"
+    echo -e "${BLUE}│${NC}    session_update            alpha/delta/beta/gamma/omega → observers     ${BLUE}│${NC}"
     echo -e "${BLUE}│${NC}    requestion_asked          requestion-endpoint upload listener          ${BLUE}│${NC}"
     echo -e "${BLUE}│${NC}    requestion_updated        requestion-endpoint cache merge              ${BLUE}│${NC}"
     echo -e "${BLUE}│${NC}    requestion_resolved       requestion cache removal                     ${BLUE}│${NC}"
     echo -e "${BLUE}│${NC}    requestion_cancelled      requestion cache removal                     ${BLUE}│${NC}"
     echo -e "${BLUE}│${NC}                                                                          ${BLUE}│${NC}"
     echo -e "${BLUE}│${NC}  control (source endpoint → router → target endpoint):                    ${BLUE}│${NC}"
-    echo -e "${BLUE}│${NC}    add_prompt                control-endpoint → alpha/gamma               ${BLUE}│${NC}"
-    echo -e "${BLUE}│${NC}    abort_session             control-endpoint → target session             ${BLUE}│${NC}"
-    echo -e "${BLUE}│${NC}    compact_session           control-endpoint → target session             ${BLUE}│${NC}"
+    echo -e "${BLUE}│${NC}    add_prompt                console/mailbox/im/timer → target session     ${BLUE}│${NC}"
+    echo -e "${BLUE}│${NC}    abort_session             console/session-control → target session       ${BLUE}│${NC}"
+    echo -e "${BLUE}│${NC}    compact_session           console/session-control → target session       ${BLUE}│${NC}"
+    echo -e "${BLUE}│${NC}    requestion_respond        requestion/session-control → requestion       ${BLUE}│${NC}"
     echo -e "${BLUE}│${NC}                                                                          ${BLUE}│${NC}"
     echo -e "${BLUE}│${NC}  request (source endpoint → router → target, returns response):          ${BLUE}│${NC}"
-    echo -e "${BLUE}│${NC}    runtime_workspace_view_snapshot   control-endpoint → target runtime   ${BLUE}│${NC}"
-    echo -e "${BLUE}│${NC}    runtime_requestion_snapshot       control-endpoint → west/requestion    ${BLUE}│${NC}"
-    echo -e "${BLUE}│${NC}    runtime_session_view_snapshot     control-endpoint → target session    ${BLUE}│${NC}"
-    echo -e "${BLUE}│${NC}    runtime_session_messages          control-endpoint → target session    ${BLUE}│${NC}"
+    echo -e "${BLUE}│${NC}    runtime_workspace_view_snapshot   console/session-control → runtime     ${BLUE}│${NC}"
+    echo -e "${BLUE}│${NC}    runtime_requestion_snapshot       console/session-control → requestion  ${BLUE}│${NC}"
+    echo -e "${BLUE}│${NC}    runtime_session_view_snapshot     console/session-control → session     ${BLUE}│${NC}"
+    echo -e "${BLUE}│${NC}    runtime_session_messages          console/im/session-control → session  ${BLUE}│${NC}"
     echo -e "${BLUE}│${NC}                                                                          ${BLUE}│${NC}"
     echo -e "${BLUE}│${NC}  response (router → source address, target=request.source):               ${BLUE}│${NC}"
     echo -e "${BLUE}│${NC}    mirrors request/control subtype     returned from target endpoint      ${BLUE}│${NC}"
@@ -168,12 +215,12 @@ print_topology_tree() {
     echo ""
 }
 
-# ── Launch 12-process demo ───────────────────────────────────────────
+# ── Launch 15-process demo ───────────────────────────────────────────
 
 launch_demo() {
-    info "=== Launching 12-process live demo ==="
+    info "=== Launching 15-process live demo ==="
 
-    LOG_DIR="/workspace/OSG-Project/.tmp/gv-demo-12p-$(date +%Y%m%d-%H%M%S)"
+    LOG_DIR="/workspace/OSG-Project/.tmp/gv-demo-15p-$(date +%Y%m%d-%H%M%S)"
     mkdir -p "$LOG_DIR"
     info "Log dir: $LOG_DIR"
 
@@ -201,95 +248,88 @@ launch_demo() {
     }
     trap cleanup EXIT
 
-    # ── Phase 1: Routers ──
-    info "[1/12] root-router :7200..."
-    $BIN_DIR/router --node-id root-router --bind-addr 127.0.0.1:7200 --tap-capacity 128 > "$LOG_DIR/01-root-router.log" 2>&1 &
+    # ── Phase 1: Routers (with state-files) ──
+    info "[1/4] root-router :7200..."
+    $BIN_DIR/router --node-id root-router --bind-addr 127.0.0.1:7200 --tap-capacity 128 --state-file "$STATE_DIR/demo-state-root.json" > "$LOG_DIR/01-root-router.log" 2>&1 &
     record_pid "root-router" "$!" ":7200"
     sleep 1
 
-    info "[2/12] east-router :7201..."
-    $BIN_DIR/router --node-id east-router --bind-addr 127.0.0.1:7201 --upstream-url ws://127.0.0.1:7200 > "$LOG_DIR/02-east-router.log" 2>&1 &
+    info "[2/4] east-router :7201..."
+    $BIN_DIR/router --node-id east-router --bind-addr 127.0.0.1:7201 --upstream-url ws://127.0.0.1:7200 --state-file "$STATE_DIR/demo-state-east.json" > "$LOG_DIR/02-east-router.log" 2>&1 &
     record_pid "east-router" "$!" ":7201"
     sleep 1
 
-    info "[3/12] west-router :7202..."
-    $BIN_DIR/router --node-id west-router --bind-addr 127.0.0.1:7202 --upstream-url ws://127.0.0.1:7200 > "$LOG_DIR/03-west-router.log" 2>&1 &
+    info "[3/4] west-router :7202..."
+    $BIN_DIR/router --node-id west-router --bind-addr 127.0.0.1:7202 --upstream-url ws://127.0.0.1:7200 --state-file "$STATE_DIR/demo-state-west.json" > "$LOG_DIR/03-west-router.log" 2>&1 &
     record_pid "west-router" "$!" ":7202"
     sleep 1
 
-    info "[4/12] nested-router :7203..."
-    $BIN_DIR/router --node-id nested-router --bind-addr 127.0.0.1:7203 --upstream-url ws://127.0.0.1:7202 > "$LOG_DIR/04-nested-router.log" 2>&1 &
+    info "[4/4] nested-router :7203..."
+    $BIN_DIR/router --node-id nested-router --bind-addr 127.0.0.1:7203 --upstream-url ws://127.0.0.1:7202 --state-file "$STATE_DIR/demo-state-nested.json" > "$LOG_DIR/04-nested-router.log" 2>&1 &
     record_pid "nested-router" "$!" ":7203"
     sleep 1
 
-    # ── Phase 2: Persistent clients (must start BEFORE viewers, so viewers see events) ──
-    info "[5/12] alpha-client -> east..."
-    $BIN_DIR/alpha-client --router-url ws://127.0.0.1:7201 --stay-alive > "$LOG_DIR/05-alpha-client.log" 2>&1 &
-    record_pid "alpha-client" "$!" "east:7201 $ALPHA_ADDR"
+    # ── Phase 2: bash-clientdummy instances (multi-session) ──
+    info "[5/9] alpha-client -> east (2 sessions)..."
+    $BIN_DIR/bash-clientdummy --router-url ws://127.0.0.1:7201 --node-id alpha-client --domain east --runtime runtime-alpha --session session-alpha-1 --session session-alpha-2 --stay-alive > "$LOG_DIR/05-alpha-client.log" 2>&1 &
+    record_pid "alpha-client" "$!" "east:7201"
     sleep 2
 
-    info "[6/12] beta-client -> west..."
-    $BIN_DIR/beta-client --router-url ws://127.0.0.1:7202 --stay-alive > "$LOG_DIR/06-beta-client.log" 2>&1 &
-    record_pid "beta-client" "$!" "west:7202 $BETA_ADDR"
+    info "[6/9] delta-client -> east (1 session)..."
+    $BIN_DIR/bash-clientdummy --router-url ws://127.0.0.1:7201 --node-id delta-client --domain east --runtime runtime-delta --session session-delta-1 --stay-alive > "$LOG_DIR/06-delta-client.log" 2>&1 &
+    record_pid "delta-client" "$!" "east:7201"
     sleep 2
 
-    info "[7/12] gamma-client -> nested..."
-    $BIN_DIR/gamma-client --router-url ws://127.0.0.1:7203 --stay-alive > "$LOG_DIR/07-gamma-client.log" 2>&1 &
-    record_pid "gamma-client" "$!" "nested:7203 $GAMMA_ADDR"
+    info "[7/9] beta-client -> west (2 sessions)..."
+    $BIN_DIR/bash-clientdummy --router-url ws://127.0.0.1:7202 --node-id beta-client --domain west --runtime runtime-beta --session session-beta-1 --session session-beta-2 --stay-alive > "$LOG_DIR/07-beta-client.log" 2>&1 &
+    record_pid "beta-client" "$!" "west:7202"
     sleep 2
 
-    # ── Phase 3: Viewers (started AFTER clients so they can capture events) ──
-    info "[8/12] root-viewer -> root..."
-    $BIN_DIR/surface-viewer --router-url ws://127.0.0.1:7200 --node-id root-viewer --subtype-filter session_update > "$LOG_DIR/08-root-viewer.log" 2>&1 &
-    record_pid "root-viewer" "$!" "root:7200"
-    sleep 1
+    info "[8/9] gamma-client -> nested (2 sessions)..."
+    $BIN_DIR/bash-clientdummy --router-url ws://127.0.0.1:7203 --node-id gamma-client --domain nested --runtime runtime-gamma --session session-gamma-1 --session session-gamma-2 --stay-alive > "$LOG_DIR/08-gamma-client.log" 2>&1 &
+    record_pid "gamma-client" "$!" "nested:7203"
+    sleep 2
 
-    info "[9/12] east-viewer -> east..."
-    $BIN_DIR/surface-viewer --router-url ws://127.0.0.1:7201 --node-id east-viewer --subtype-filter session_update > "$LOG_DIR/09-east-viewer.log" 2>&1 &
-    record_pid "east-viewer" "$!" "east:7201"
-    sleep 1
+    info "[9/9] omega-client -> nested (1 session)..."
+    $BIN_DIR/bash-clientdummy --router-url ws://127.0.0.1:7203 --node-id omega-client --domain nested --runtime runtime-omega --session session-omega-1 --stay-alive > "$LOG_DIR/09-omega-client.log" 2>&1 &
+    record_pid "omega-client" "$!" "nested:7203"
+    sleep 2
 
-    info "[10/12] nested-viewer -> nested..."
-    $BIN_DIR/surface-viewer --router-url ws://127.0.0.1:7203 --node-id nested-viewer --subtype-filter session_update > "$LOG_DIR/10-nested-viewer.log" 2>&1 &
-    record_pid "nested-viewer" "$!" "nested:7203"
-    sleep 1
-
-    # ── Phase 4: Endpoints ──
-    info "[11/12] requestion-endpoint -> west (with --seed-demo)..."
+    # ── Phase 3: Endpoints ──
+    info "[10/15] requestion-endpoint -> west (with --seed-demo)..."
     $BIN_DIR/requestion-endpoint \
         --router-url ws://127.0.0.1:7202 \
         --address west/requestion-endpoint/requestion-endpoint \
         --seed-demo \
-        > "$LOG_DIR/12-requestion-endpoint.log" 2>&1 &
+        > "$LOG_DIR/10-requestion-endpoint.log" 2>&1 &
     record_pid "requestion-endpoint" "$!" "west:7202"
     sleep 2
 
-    # ── Drive one-shot control commands (after all persistent processes are up) ──
-    info "[11b] control-endpoint: add_prompt to alpha..."
-    timeout 15 $BIN_DIR/control-endpoint \
-        --router-url ws://127.0.0.1:7201 \
-        --target "$ALPHA_ADDR" \
-        --command addprompt \
-        --message "Hello from 12-process demo" \
-        > "$LOG_DIR/11-control-endpoint.log" 2>&1 || true
+    info "[11/15] console-endpoint -> root (command-mode add_prompt)..."
+    timeout 15 $BIN_DIR/console-endpoint \
+        --router-url ws://127.0.0.1:7200 \
+        --command-mode \
+        --target "$ALPHA_ADDR_1" \
+        --command add_prompt \
+        --message "Hello from 15-process demo" \
+        > "$LOG_DIR/11-console-endpoint.log" 2>&1 || true
     sleep 1
 
-    # ── Drive one-shot request commands ──
-    info "[11c] control-endpoint: runtime_workspace_view_snapshot to alpha..."
-    timeout 15 $BIN_DIR/control-endpoint \
-        --router-url ws://127.0.0.1:7201 \
-        --target "$ALPHA_ADDR" \
+    info "[12/15] console-endpoint: runtime_workspace_view_snapshot..."
+    timeout 15 $BIN_DIR/console-endpoint \
+        --router-url ws://127.0.0.1:7200 \
+        --command-mode \
+        --target "$ALPHA_ADDR_1" \
         --command runtime_workspace_view_snapshot \
-        >> "$LOG_DIR/11-control-endpoint.log" 2>&1 || true
+        >> "$LOG_DIR/11-console-endpoint.log" 2>&1 || true
 
     # ── Wait bounded (keep processes alive for observation) ──
-    info "All 12 processes launched. Waiting 15s for observation..."
+    info "All 15 processes launched. Waiting 15s for observation..."
     sleep 15
 
     # ── Snapshot evidence ──
     info "Capturing evidence..."
 
-    # WS connections
     {
         echo "=== LISTEN sockets on 7200-7203 ==="
         for port in 7200 7201 7202 7203; do
@@ -311,10 +351,9 @@ launch_demo() {
         done < "$PIDS_FILE"
     } > "$LOG_DIR/ws-connections.txt" 2>/dev/null
 
-    # ── Summary ──
     echo ""
     echo -e "${GREEN}════════════════════════════════════════════════════════════════${NC}"
-    echo -e "${GREEN} 12-process demo launched${NC}"
+    echo -e "${GREEN} 15-process demo launched${NC}"
     echo -e "${GREEN}════════════════════════════════════════════════════════════════${NC}"
     echo ""
     echo -e "Log dir: ${YELLOW}$LOG_DIR/${NC}"
@@ -347,8 +386,8 @@ verify_logs() {
         fi
     done
 
-    # Clients
-    for name in alpha-client beta-client gamma-client; do
+    # Clients (bash-clientdummy instances)
+    for name in alpha-client delta-client beta-client gamma-client omega-client; do
         if grep -q "$name" "$log_dir"/*.log 2>/dev/null; then
             pass "$name connected"; ((p++))
         else
@@ -356,18 +395,11 @@ verify_logs() {
         fi
     done
 
-    # Viewers
-    if grep -q "surface-viewer" "$log_dir"/*.log 2>/dev/null; then
-        pass "surface-viewer instances running"; ((p++))
+    # Console endpoint
+    if grep -q "console-endpoint\|console_endpoint" "$log_dir"/*.log 2>/dev/null; then
+        pass "console-endpoint running"; ((p++))
     else
-        fail "no surface-viewer evidence"; ((f++))
-    fi
-
-    # Control endpoint
-    if grep -q "control-endpoint" "$log_dir"/*.log 2>/dev/null; then
-        pass "control-endpoint running"; ((p++))
-    else
-        fail "control-endpoint not found"; ((f++))
+        fail "no console-endpoint evidence"; ((f++))
     fi
 
     # Requestion endpoint
@@ -426,7 +458,7 @@ show_key_logs() {
     local log_dir="$1"
     info "=== Key log excerpts ==="
 
-    for f in 01-root-router 02-east-router 05-alpha-client 08-root-viewer 11-control-endpoint 12-requestion-endpoint; do
+    for f in 01-root-router 02-east-router 05-alpha-client 08-gamma-client 10-requestion-endpoint 11-console-endpoint; do
         echo ""
         echo -e "${CYAN}--- $f (first 20 lines) ---${NC}"
         head -20 "$log_dir/$f.log" 2>/dev/null || echo "(no log)"

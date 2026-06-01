@@ -4,21 +4,27 @@
 //! capability. Collects requestion/permission/question events and provides
 //! snapshot queries via ReadRequest/ReadResponse.
 //!
+//! ## Handshake
+//!
+//! By default sends `LinkHandshake` (OSGP vNext) with `peer_id` only.
+//! The `--legacy-hello` flag falls back to `HelloMessage` with `role`,
+//! `capabilities`, and `addresses` for backward compatibility.
+//!
 //! ## Role
 //!
 //! This is a **requestion cache/snapshot endpoint**, NOT an ObserverSurface.
-//! - Hello uses `role: "endpoint"` with `capabilities: ["surface_viewer"]`.
-//! - It receives local upload fan-out (via surface_viewer capability).
-//! - It materializes its own cache view — the router does NOT store state.
+//! - Receives local upload fan-out (via surface_viewer capability).
+//! - Materializes its own cache view — the router does NOT store state.
+//! - Route announcement requires `announce.route` permission grant from router.
 //!
 //! ## Collected events (OSGP requestion semantics)
 //!
 //! - `session_update`: updates session state cache
-//! - `requestion.asked`: upserts pending requestion
-//! - `requestion.resolved` / `requestion.cancelled`: removes requestion
-//! - `requestion.updated`: merges/updates requestion
-//! - `permission.asked`: treated as requestion item (OSGP unified model)
-//! - `question.asked`: treated as requestion item (OSGP unified model)
+//! - `requestion_asked`: upserts pending requestion
+//! - `requestion_resolved` / `requestion_cancelled`: removes requestion
+//! - `requestion_updated`: merges/updates requestion
+//! - `permission_asked`: treated as requestion item (OSGP unified model)
+//! - `question_asked`: treated as requestion item (OSGP unified model)
 //!
 //! ## ReadRequest support
 //!
@@ -32,6 +38,7 @@
 //! ```bash
 //! cargo run -p requestion-endpoint
 //! cargo run -p requestion-endpoint -- --router-url ws://127.0.0.1:7200
+//! cargo run -p requestion-endpoint -- --legacy-hello  # fallback to legacy handshake
 //! ```
 
 mod cache;
@@ -70,6 +77,7 @@ async fn main() -> Result<()> {
     println!("  node_id       : {}", config.node_id);
     println!("  role          : endpoint");
     println!("  capabilities  : surface_viewer");
+    println!("  handshake     : {}", if config.legacy_hello { "legacy HelloMessage" } else { "LinkHandshake (vNext)" });
     println!("  seed_demo     : {}", config.seed_demo);
     println!(
         "  web_api       : {}",
@@ -98,16 +106,28 @@ async fn main() -> Result<()> {
 
     let (mut writer, mut reader) = ws_stream.split();
 
-    // Send Hello as a generic endpoint with surface_viewer capability.
-    let hello = serde_json::json!({
-        "nodeId": config.node_id,
-        "role": "endpoint",
-        "addresses": [config.address],
-        "capabilities": ["surface_viewer"],
-    });
-    let hello_text = serde_json::to_string(&hello)?;
-    writer.send(Message::Text(hello_text.into())).await?;
-    info!(node_id = %config.node_id, "sent Hello as endpoint");
+    // Send Hello/LinkHandshake to router.
+    //
+    // Default: LinkHandshake (OSGP vNext) — no role/capabilities, just peer_id.
+    // Fallback: legacy HelloMessage with role + capabilities + addresses.
+    // The router accepts both formats; LinkHandshake is the forward-compatible path.
+    if config.legacy_hello {
+        #[allow(deprecated)]
+        let hello = serde_json::json!({
+            "nodeId": config.node_id,
+            "role": "endpoint",
+            "addresses": [config.address],
+            "capabilities": ["surface_viewer"],
+        });
+        let hello_text = serde_json::to_string(&hello)?;
+        writer.send(Message::Text(hello_text.into())).await?;
+        info!(node_id = %config.node_id, "sent legacy HelloMessage as endpoint");
+    } else {
+        let handshake = osgp::LinkHandshake::new(&config.node_id);
+        let handshake_text = serde_json::to_string(&handshake)?;
+        writer.send(Message::Text(handshake_text.into())).await?;
+        info!(node_id = %config.node_id, "sent LinkHandshake (vNext)");
+    }
 
     // Drain Hello reply from router
     if let Some(msg_result) = reader.next().await {
@@ -122,13 +142,15 @@ async fn main() -> Result<()> {
         }
     }
 
-    // Send Announce to register our address with the router
+    // Send Announce to register our address with the router.
+    // Required for the endpoint to receive forwarded messages.
+    // Router permission gate: needs `announce.route` grant for this peer.
     let announce = serde_json::to_string(&LinkMessage::Announce {
         address: config.address.clone(),
         distance: 0,
     })?;
     writer.send(Message::Text(announce.into())).await?;
-    info!(address = %format_address(&config.address), "sent Announce");
+    info!(address = %format_address(&config.address), "sent Announce (requires announce.route grant)");
 
     println!("[requestion-endpoint] connected to {}", config.router_url);
     println!("[requestion-endpoint] collecting requestion/permission/question events");

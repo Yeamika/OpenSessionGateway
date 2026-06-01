@@ -2,8 +2,8 @@
 //!
 //! Pure-function caches for:
 //! - **Session state** — populated from `session_update` envelopes
-//! - **Pending requestions** — populated from `requestion.asked`, `permission.asked`,
-//!   `question.asked` envelopes (OSGP unified requestion model)
+//! - **Pending requestions** — populated from `requestion_asked`, `permission_asked`,
+//!   `question_asked` envelopes (OSGP unified requestion model)
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -88,15 +88,16 @@ impl SessionStateCache {
 
 /// A pending requestion, permission, or question.
 ///
-/// `event_subtype` stores the normalized requestion event label, for example
-/// `"requestion.asked"`, for OSGP unified requestion semantics.
+/// `event_subtype` stores the canonical event label (underscore form), for
+/// example `"requestion_asked"`, for OSGP unified requestion semantics.
+/// Legacy dot-form input (e.g. `"requestion.asked"`) is normalized on ingestion.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PendingRequestion {
     pub session_id: String,
     pub request_id: String,
     pub title: String,
     pub source: SessionAddress,
-    /// Normalized event subtype, e.g. `"requestion.asked"`.
+    /// Canonical event subtype (underscore form), e.g. `"requestion_asked"`.
     pub event_subtype: String,
     pub payload: Value,
     pub updated_at: String,
@@ -237,7 +238,7 @@ mod tests {
             "req-1".into(),
             "Permission Required".into(),
             SessionAddress::new("domain-a", Some("runtime-a".into()), Some("ses-1".into())),
-            "requestion.asked".into(),
+            "requestion_asked".into(),
             json!({}),
         );
         assert_eq!(cache.len(), 1);
@@ -256,7 +257,7 @@ mod tests {
             "req-1".into(),
             "A".into(),
             SessionAddress::new("domain-a", Some("runtime-a".into()), Some("ses-1".into())),
-            "requestion.asked".into(),
+            "requestion_asked".into(),
             json!({}),
         );
         cache.upsert(
@@ -264,7 +265,7 @@ mod tests {
             "req-2".into(),
             "B".into(),
             SessionAddress::new("domain-a", Some("runtime-a".into()), Some("ses-1".into())),
-            "permission.asked".into(),
+            "permission_asked".into(),
             json!({}),
         );
         assert_eq!(cache.len(), 2);
@@ -283,7 +284,7 @@ mod tests {
             "req-1".into(),
             "A".into(),
             SessionAddress::new("domain-a", Some("runtime-a".into()), Some("ses-1".into())),
-            "requestion.asked".into(),
+            "requestion_asked".into(),
             json!({}),
         );
 
@@ -300,7 +301,7 @@ mod tests {
             "req-1".into(),
             "A".into(),
             SessionAddress::new("domain-a", Some("runtime-a".into()), Some("ses-1".into())),
-            "requestion.asked".into(),
+            "requestion_asked".into(),
             json!({}),
         );
         cache.upsert(
@@ -308,7 +309,7 @@ mod tests {
             "req-2".into(),
             "B".into(),
             SessionAddress::new("domain-a", Some("runtime-a".into()), Some("ses-1".into())),
-            "permission.asked".into(),
+            "permission_asked".into(),
             json!({}),
         );
         cache.upsert(
@@ -316,7 +317,7 @@ mod tests {
             "req-3".into(),
             "C".into(),
             SessionAddress::new("domain-a", Some("runtime-a".into()), Some("ses-2".into())),
-            "question.asked".into(),
+            "question_asked".into(),
             json!({}),
         );
 
@@ -332,7 +333,7 @@ mod tests {
             "req-b".into(),
             "B".into(),
             SessionAddress::new("domain-a", Some("runtime-a".into()), Some("ses-1".into())),
-            "requestion.asked".into(),
+            "requestion_asked".into(),
             json!({}),
         );
         cache.upsert(
@@ -340,7 +341,7 @@ mod tests {
             "req-a".into(),
             "A".into(),
             SessionAddress::new("domain-a", Some("runtime-a".into()), Some("ses-1".into())),
-            "requestion.asked".into(),
+            "requestion_asked".into(),
             json!({}),
         );
 

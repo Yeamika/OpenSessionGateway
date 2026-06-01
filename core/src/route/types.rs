@@ -2,6 +2,18 @@
 
 use osgp::SessionAddress;
 
+// ── RouteOrigin ────────────────────────────────────────────────────
+
+/// Whether a route was learned from a peer announcement or manually
+/// inserted by an admin endpoint.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum RouteOrigin {
+    /// Learned from neighbor Hello or Announce messages.
+    Learned,
+    /// Manually inserted via admin plane.
+    Manual,
+}
+
 // ── NextHop ─────────────────────────────────────────────────────────
 
 /// Identifies where a route points: a local delivery, a neighbor, or a drop.
@@ -30,6 +42,7 @@ pub struct ForwardDecision {
 pub(super) struct RouteEntry {
     pub(super) neighbor: String,
     pub(super) distance: u32,
+    pub(super) origin: RouteOrigin,
 }
 
 // ── RouteAnnouncement ───────────────────────────────────────────────
@@ -49,6 +62,17 @@ impl RouteAnnouncement {
             distance: 0,
         }
     }
+}
+
+// ── RouteSnapshotEntry ──────────────────────────────────────────────
+
+/// A public snapshot entry for route table inspection / admin list.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RouteSnapshotEntry {
+    pub address: SessionAddress,
+    pub neighbor: String,
+    pub distance: u32,
+    pub origin: RouteOrigin,
 }
 
 // ── RouteBucket (internal) ──────────────────────────────────────────

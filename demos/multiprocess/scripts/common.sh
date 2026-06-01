@@ -97,10 +97,19 @@ record_pid() {
 cleanup_pids() {
     info "Cleaning up background processes..."
     for pid in "${ALL_PIDS[@]}"; do
-        kill "$pid" 2>/dev/null || true
+        if kill -0 "$pid" 2>/dev/null; then
+            kill "$pid" 2>/dev/null || true
+        fi
     done
-    # Also catch any orphaned children
-    jobs -p 2>/dev/null | xargs -r kill 2>/dev/null || true
+    # Also catch any orphaned children by port
+    for port in 7200 7201 7202 7203; do
+        local pids_on_port
+        pids_on_port=$(lsof -ti :$port 2>/dev/null || true)
+        if [ -n "$pids_on_port" ]; then
+            echo "$pids_on_port" | xargs kill 2>/dev/null || true
+        fi
+    done
+    pkill -f "bash-clientdummy" 2>/dev/null || true
     wait 2>/dev/null || true
     info "Cleanup done"
 }

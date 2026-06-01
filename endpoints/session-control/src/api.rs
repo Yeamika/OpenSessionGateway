@@ -4,7 +4,12 @@ use osgp::SessionAddress;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
-const REQUESTS: &[&str] = &["runtime_session_view_snapshot", "runtime_session_messages"];
+const REQUESTS: &[&str] = &[
+    "runtime_workspace_view_snapshot",
+    "runtime_requestion_snapshot",
+    "runtime_session_view_snapshot",
+    "runtime_session_messages",
+];
 const CONTROLS: &[&str] = &[
     "add_prompt",
     "abort_session",
@@ -12,6 +17,7 @@ const CONTROLS: &[&str] = &[
     "create_session",
     "rename_session",
     "resume_session",
+    "requestion_respond",
 ];
 
 #[derive(Debug, Deserialize)]

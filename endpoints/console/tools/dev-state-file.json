@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "node_id": "test-router",
+  "updated_at": "0",
+  "route_revision": 0,
+  "rule_revision": 0,
+  "permission_revision": 0,
+  "manual_routes": [
+    {
+      "address": "test-domain/test-runtime/*",
+      "neighbor": "test-neighbor",
+      "distance": 1
+    }
+  ],
+  "rules": [],
+  "persistent_grants": [
+    { "peer_id": "console-endpoint", "op": "admin.routes.read", "kind": "persist" },
+    { "peer_id": "console-endpoint", "op": "admin.routes.write", "kind": "persist" },
+    { "peer_id": "console-endpoint", "op": "admin.rules.read", "kind": "persist" },
+    { "peer_id": "console-endpoint", "op": "admin.rules.write", "kind": "persist" },
+    { "peer_id": "console-endpoint", "op": "announce.route", "kind": "persist" },
+    { "peer_id": "console-endpoint", "op": "read.runtime_session_messages", "kind": "persist" }
+  ],
+  "audit_log": []
+}
