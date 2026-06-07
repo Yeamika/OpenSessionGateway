@@ -6,8 +6,8 @@
  * osgp-adapter module for SDK ↔ router wire format bridging.
  *
  * Wire protocol follows OpenSessionGateway Protocol (OSGP):
- *   - Hello: {nodeId, role:"endpoint"|"router", addresses, capabilities}
- *   - LinkMessage: {type: "announce"|"envelope"|..., data: {...}}
+ *   - LinkHandshake: {protocolVersion, peerId, metadata}
+ *   - LinkMessage: {type: "announce"|"envelope"|..., ...}
  *   - SessionEnvelope business filter: linkType + subtype.
  *   - SessionAddress: {domain, runtime?, session?}  (camelCase)
  */
@@ -38,7 +38,7 @@ import {
   routerEnvelopeToOsgp,
   createUploadLinkMessage,
   createResponseLinkMessage,
-  createRouterHello,
+  createRouterLinkHandshake,
   createAnnounceLinkMessage,
 } from "./osgp-adapter.js"
 
@@ -88,7 +88,7 @@ export type GlassveinClientState = {
   reconnectAttempt: number
 }
 
-/** Hello handshake message (plain struct, not LinkMessage-wrapped) */
+/** Legacy Hello handshake message (plain struct, not LinkMessage-wrapped) */
 export type HelloMessage = RouterHelloMessage
 
 export type ControlCommandHandler = (command: {
@@ -117,6 +117,7 @@ export class GlassveinWsClient extends EventEmitter {
   private readonly config: Required<Omit<GlassveinClientConfig, "runtime" | "session">> & Pick<GlassveinClientConfig, "runtime" | "session">
   private ws: WebSocket | null = null
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null
+  private intentionalDisconnect = false
   private _state: GlassveinClientState = {
     status: "disconnected",
     lastError: "",
@@ -215,6 +216,7 @@ export class GlassveinWsClient extends EventEmitter {
     }
     this._state.status = "connecting"
     this._state.lastError = ""
+    this.intentionalDisconnect = false
     this.emit("state", this.state)
 
     try {
@@ -237,6 +239,7 @@ export class GlassveinWsClient extends EventEmitter {
     this._state.status = "disconnected"
     this._state.lastError = ""
     this._state.reconnectAttempt = 0
+    this.intentionalDisconnect = true
     this.emit("state", this.state)
 
     if (this.ws) {
@@ -273,8 +276,12 @@ export class GlassveinWsClient extends EventEmitter {
     return this.sendUploadEvent(subtype, event.properties || {})
   }
 
+  sendAddressRegister(address: RouterSessionAddress, distance = 0): boolean {
+    return this.sendLinkMessage(createAnnounceLinkMessage(address, distance))
+  }
+
   sendWorkspaceRegister(): boolean {
-    return this.sendLinkMessage(createAnnounceLinkMessage(this.address, 0))
+    return this.sendAddressRegister(this.address, 0)
   }
 
   // ── Internal ──────────────────────────────────────────────────────
@@ -289,11 +296,11 @@ export class GlassveinWsClient extends EventEmitter {
 
         try {
           await this.sendHello()
-          // Auto-register workspace address with router after Hello
-          this.sendWorkspaceRegister()
           this._state.status = "connected"
           this._state.lastError = ""
           this._state.reconnectAttempt = 0
+          // Auto-register workspace address with router after LinkHandshake.
+          this.sendWorkspaceRegister()
           this.emit("state", this.state)
           this.emit("connected")
           resolve()
@@ -325,6 +332,7 @@ export class GlassveinWsClient extends EventEmitter {
         this._state.lastError = `closed: ${code} ${reasonText}`.trim()
         this.emit("state", this.state)
         this.emit("disconnected", { code, reason: reasonText })
+        if (this.intentionalDisconnect) return
         this.scheduleReconnect()
       })
 
@@ -338,19 +346,17 @@ export class GlassveinWsClient extends EventEmitter {
   }
 
   private async sendHello(): Promise<void> {
-    const hello = createRouterHello(
-      this.config.nodeId,
-      this.config.role as "endpoint" | "router",
-      [this.address],
-      this.config.capabilities,
-    )
-    const text = JSON.stringify(hello)
+    const handshake = createRouterLinkHandshake(this.config.nodeId, {
+      endpoint: "opencode",
+      capabilities: this.config.capabilities,
+    })
+    const text = JSON.stringify(handshake)
     return new Promise((resolve, reject) => {
       if (!this.ws) return reject(new Error("not connected"))
       this.ws.send(text, (error) => {
         if (error) reject(error)
         else {
-          this.emit("hello_sent", hello)
+          this.emit("hello_sent", handshake)
           resolve()
         }
       })

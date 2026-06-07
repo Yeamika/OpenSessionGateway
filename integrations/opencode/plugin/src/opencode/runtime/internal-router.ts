@@ -6,6 +6,7 @@
  */
 
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process"
+import fs from "node:fs"
 import { createRequire } from "node:module"
 import path from "node:path"
 import WebSocket from "ws"
@@ -47,6 +48,8 @@ function routerKey(config: InternalRouterRuntimeConfig): string {
     bindAddr: config.bindAddr,
     upstreamUrls: config.upstreamUrls,
     binaryPath: config.binaryPath,
+    stateFilePath: config.stateFilePath,
+    trustedAnnouncePeers: config.trustedAnnouncePeers,
   })
 }
 
@@ -69,12 +72,77 @@ export function resolveGlassVeinRouterBinary(explicit = ""): string {
 export function buildInternalRouterArgs(config: InternalRouterRuntimeConfig): string[] {
   const args = [
     "--node-id", config.nodeId,
-    "--bind", config.bindAddr,
+    "--bind-addr", config.bindAddr,
   ]
   for (const url of config.upstreamUrls) {
-    if (text(url)) args.push("--upstream", text(url))
+    if (text(url)) args.push("--upstream-url", text(url))
   }
+  if (text(config.stateFilePath)) args.push("--state-file", text(config.stateFilePath))
   return args
+}
+
+function routerStateBase(config: InternalRouterRuntimeConfig): Record<string, unknown> {
+  return {
+    schema_version: 1,
+    node_id: config.nodeId,
+    updated_at: new Date().toISOString(),
+    route_revision: 0,
+    rule_revision: 0,
+    permission_revision: 0,
+    manual_routes: [],
+    rules: [],
+    persistent_grants: [],
+    audit_log: [],
+  }
+}
+
+function readRouterStateFile(filePath: string, config: InternalRouterRuntimeConfig): Record<string, unknown> {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(filePath, "utf8"))
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : routerStateBase(config)
+  } catch {
+    return routerStateBase(config)
+  }
+}
+
+function grantKey(value: unknown): string {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return ""
+  const src = value as Record<string, unknown>
+  const peer = text(src.peer_id)
+  const op = text(src.op)
+  return peer && op ? `${peer}::${op}` : ""
+}
+
+export function ensureInternalRouterStateFile(config: InternalRouterRuntimeConfig): string {
+  const filePath = text(config.stateFilePath)
+  if (!filePath) return ""
+  const state = readRouterStateFile(filePath, config)
+  const peers = [...new Set(config.trustedAnnouncePeers.map(text).filter(Boolean))]
+  const current = Array.isArray(state.persistent_grants) ? state.persistent_grants : []
+  const seen = new Set(current.map(grantKey).filter(Boolean))
+  const grants = [...current]
+  for (const peer of peers) {
+    const key = `${peer}::announce_route`
+    if (seen.has(key)) continue
+    seen.add(key)
+    grants.push({
+      peer_id: peer,
+      op: "announce_route",
+      kind: "persist",
+    })
+  }
+  const next = {
+    ...routerStateBase(config),
+    ...state,
+    node_id: text(state.node_id) || config.nodeId,
+    updated_at: new Date().toISOString(),
+    persistent_grants: grants,
+  }
+  fs.mkdirSync(path.dirname(filePath), { recursive: true })
+  fs.writeFileSync(filePath, `${JSON.stringify(next, null, 2)}\n`, "utf8")
+  return filePath
 }
 
 function waitForRouter(host: string, port: number, timeoutMs: number): Promise<void> {
@@ -140,6 +208,7 @@ export async function ensureInternalRouter(
 
   state.starting = (async () => {
     const binary = resolveGlassVeinRouterBinary(config.binaryPath)
+    ensureInternalRouterStateFile(config)
     const args = buildInternalRouterArgs(config)
     const child = spawn(binary, args, {
       stdio: ["ignore", "pipe", "pipe"],
@@ -188,4 +257,3 @@ export function stopInternalRouter(writeLog: WriteLog): void {
     void writeLog("warn", "internal router stop failed", { error: error instanceof Error ? error.message : String(error) })
   }
 }
-

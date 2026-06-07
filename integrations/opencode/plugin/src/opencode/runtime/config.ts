@@ -82,6 +82,8 @@ export type InternalRouterRuntimeConfig = {
   upstreamUrls: string[]
   binaryPath: string
   startupTimeoutMs: number
+  stateFilePath: string
+  trustedAnnouncePeers: string[]
 }
 
 const DEFAULT_LOG_DIR = path.resolve(
@@ -155,6 +157,8 @@ export function readInternalRouterEnvOverrides(): Partial<InternalRouterRuntimeC
     ...(normalizeWsUrl(process.env.VEIN_UPSTREAM_ROUTER_URL || process.env.GV_UPSTREAM_ROUTER_URL || process.env.OSG_UPSTREAM_ROUTER_URL) ? { upstreamUrls: [normalizeWsUrl(process.env.VEIN_UPSTREAM_ROUTER_URL || process.env.GV_UPSTREAM_ROUTER_URL || process.env.OSG_UPSTREAM_ROUTER_URL)] } : {}),
     ...(text(process.env.VEIN_ROUTER_BINARY || process.env.GV_ROUTER_BINARY || process.env.GLASSVEIN_ROUTER_BINARY) ? { binaryPath: text(process.env.VEIN_ROUTER_BINARY || process.env.GV_ROUTER_BINARY || process.env.GLASSVEIN_ROUTER_BINARY) } : {}),
     ...(positiveInt(process.env.VEIN_ROUTER_STARTUP_TIMEOUT_MS || process.env.GV_ROUTER_STARTUP_TIMEOUT_MS || process.env.OSG_ROUTER_STARTUP_TIMEOUT_MS) ? { startupTimeoutMs: positiveInt(process.env.VEIN_ROUTER_STARTUP_TIMEOUT_MS || process.env.GV_ROUTER_STARTUP_TIMEOUT_MS || process.env.OSG_ROUTER_STARTUP_TIMEOUT_MS) as number } : {}),
+    ...(text(process.env.VEIN_ROUTER_STATE_FILE || process.env.GV_ROUTER_STATE_FILE || process.env.OSG_ROUTER_STATE_FILE) ? { stateFilePath: text(process.env.VEIN_ROUTER_STATE_FILE || process.env.GV_ROUTER_STATE_FILE || process.env.OSG_ROUTER_STATE_FILE) } : {}),
+    ...(splitCsv(process.env.VEIN_ROUTER_TRUSTED_ANNOUNCE_PEERS || process.env.GV_ROUTER_TRUSTED_ANNOUNCE_PEERS || process.env.OSG_ROUTER_TRUSTED_ANNOUNCE_PEERS).length > 0 ? { trustedAnnouncePeers: splitCsv(process.env.VEIN_ROUTER_TRUSTED_ANNOUNCE_PEERS || process.env.GV_ROUTER_TRUSTED_ANNOUNCE_PEERS || process.env.OSG_ROUTER_TRUSTED_ANNOUNCE_PEERS) } : {}),
   }
 }
 
@@ -235,6 +239,12 @@ export async function buildVeinRuntimeConfig(): Promise<VeinRuntimeConfig> {
     const upstreamUrls = (internalEnv.upstreamUrls && internalEnv.upstreamUrls.length > 0)
       ? internalEnv.upstreamUrls
       : splitCsv(internalConfig.upstreamUrls || internalConfig.upstreamUrl).map(normalizeWsUrl).filter(Boolean)
+    const stateFilePath = text(internalEnv.stateFilePath) || text(internalConfig.stateFilePath) || path.join(DEFAULT_LOG_DIR, "internal-router-state.json")
+    const trustedAnnouncePeers = [...new Set([
+      "timer-endpoint",
+      ...splitCsv(internalConfig.trustedAnnouncePeers || internalConfig.trustedAnnouncePeer),
+      ...(internalEnv.trustedAnnouncePeers || []),
+    ].map((item) => text(item)).filter(Boolean))]
     return {
       enabled,
       nodeId,
@@ -245,6 +255,8 @@ export async function buildVeinRuntimeConfig(): Promise<VeinRuntimeConfig> {
       upstreamUrls,
       binaryPath: text(internalEnv.binaryPath) || text(internalConfig.binaryPath),
       startupTimeoutMs: positiveInt(internalEnv.startupTimeoutMs) || positiveInt(internalConfig.startupTimeoutMs) || 5_000,
+      stateFilePath,
+      trustedAnnouncePeers,
     }
   }
 

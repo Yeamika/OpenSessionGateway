@@ -23,6 +23,8 @@ export type LoadedMcpMetadata = {
 export type OsgMcpSurfaceDescriptor = {
   routeSegment: string
   sourceID: string
+  url?: string
+  autoEnable?: boolean
 }
 
 const MANAGED_NAMES_META_KEY = "__osgManagedMcpNames"
@@ -30,6 +32,15 @@ const MANAGED_BASE_META_KEY = "__osgManagedMcpBaseUrl"
 
 function text(value: unknown): string {
   return typeof value === "string" ? value.trim() : ""
+}
+
+function bool(value: unknown): boolean | null {
+  if (typeof value === "boolean") return value
+  const raw = text(value).toLowerCase()
+  if (!raw) return null
+  if (["1", "true", "yes", "on", "enabled"].includes(raw)) return true
+  if (["0", "false", "no", "off", "disabled"].includes(raw)) return false
+  return null
 }
 
 function record(value: unknown): Record<string, unknown> {
@@ -114,11 +125,47 @@ function normalizeSurfaceDescriptors(values: OsgMcpSurfaceDescriptor[]): OsgMcpS
     const current = map.get(routeSegment)
     const sourceID = text(value.sourceID) || text(current?.sourceID) || routeSegment
     map.set(routeSegment, {
+      ...current,
       routeSegment,
       sourceID,
+      ...(text(value.url) ? { url: text(value.url) } : {}),
+      autoEnable: Boolean(current?.autoEnable || value.autoEnable),
     })
   }
   return [...map.values()].sort((a, b) => a.routeSegment.localeCompare(b.routeSegment))
+}
+
+function normalizeTimerMcpUrl(value: unknown): string {
+  const raw = text(value)
+  if (!raw) return ""
+  try {
+    const url = new URL(raw)
+    if (url.protocol !== "http:" && url.protocol !== "https:") return ""
+    const pathname = trimRightSlash(url.pathname)
+    if (!pathname || pathname === "/") {
+      url.pathname = "/mcp/timer_scheduler"
+    } else if (pathname.endsWith("/mcp")) {
+      url.pathname = `${pathname}/timer_scheduler`
+    }
+    return url.toString()
+  } catch {
+    return ""
+  }
+}
+
+function readExternalMcpSurfaceDescriptors(): OsgMcpSurfaceDescriptor[] {
+  const timerEnabled = bool(process.env.VEIN_TIMER_MCP_ENABLED || process.env.GV_TIMER_MCP_ENABLED || process.env.OSG_TIMER_MCP_ENABLED)
+  if (timerEnabled === false) return []
+
+  const timerUrl = normalizeTimerMcpUrl(process.env.VEIN_TIMER_MCP_URL || process.env.GV_TIMER_MCP_URL || process.env.OSG_TIMER_MCP_URL)
+  if (!timerUrl) return []
+
+  return [{
+    routeSegment: text(process.env.VEIN_TIMER_MCP_NAME || process.env.GV_TIMER_MCP_NAME || process.env.OSG_TIMER_MCP_NAME) || "timer_scheduler",
+    sourceID: text(process.env.VEIN_TIMER_MCP_SOURCE_ID || process.env.GV_TIMER_MCP_SOURCE_ID || process.env.OSG_TIMER_MCP_SOURCE_ID) || "timer-endpoint",
+    url: timerUrl,
+    autoEnable: true,
+  }]
 }
 
 async function discoverSurfaceDescriptors(input: { wsServerUrl?: string; baseUrl?: string }): Promise<OsgMcpSurfaceDescriptor[]> {
@@ -150,9 +197,10 @@ export async function discoverOsgSurfaces(input: { wsServerUrl?: string; baseUrl
 
 function buildRemoteConfig(surface: OsgMcpSurfaceDescriptor, runtimeID: string, instanceWorkspaceDirectory: string, mcpBaseUrl: string): Record<string, unknown> {
   const routeSegment = surface.routeSegment
+  const url = text(surface.url) || (mcpBaseUrl ? `${mcpBaseUrl}/${routeSegment}` : "")
   return withHandshakeQuery({
     type: "remote",
-    url: mcpBaseUrl ? `${mcpBaseUrl}/${routeSegment}` : "",
+    url,
     oauth: false,
     timeout: 8000,
   }, { runtimeID, instanceWorkspaceDirectory }) as Record<string, unknown>
@@ -331,6 +379,11 @@ function explicitEnabledEntry(config: unknown): Record<string, unknown> | null {
   return src.enabled === true ? src : null
 }
 
+function explicitDisabledEntry(config: unknown): boolean {
+  if (!config || typeof config !== "object" || Array.isArray(config)) return false
+  return (config as Record<string, unknown>).enabled === false
+}
+
 function mergeManagedConfig(generated: unknown, existing: unknown): Record<string, unknown> {
   const base = generated && typeof generated === "object" ? generated as Record<string, unknown> : {}
   const explicit = explicitEnabledEntry(existing)
@@ -353,7 +406,10 @@ export async function applyOsgMcpConfig(
   const wsServerUrl = typeof getWsServerUrl === "function" ? getWsServerUrl() : ""
   const runtimeID = typeof getRuntimeID === "function" ? getRuntimeID() : ""
   const instanceWorkspaceDirectory = typeof getInstanceWorkspaceDirectory === "function" ? getInstanceWorkspaceDirectory() : ""
-  const surfaces = await discoverSurfaceDescriptors({ wsServerUrl })
+  const surfaces = normalizeSurfaceDescriptors([
+    ...await discoverSurfaceDescriptors({ wsServerUrl }),
+    ...readExternalMcpSurfaceDescriptors(),
+  ])
   const routeSegments = surfaces.map((item) => item.routeSegment)
   const mcpBaseUrl = deriveMcpBaseUrl({ wsServerUrl })
   const generatedMcp = buildOsgMcpConfig({
@@ -365,9 +421,12 @@ export async function applyOsgMcpConfig(
   const previous = normalizeMcpRecord(cfg.mcp)
   const previousManagedNames = readManagedNamesMeta(cfg)
   const managedBases = managedBaseCandidates(mcpBaseUrl, readManagedBaseMeta(cfg))
-  const unmanaged = Object.fromEntries(Object.entries(previous).filter(([name, value]) => !isManagedEntry(name, value, previousManagedNames, managedBases)))
+  const unmanaged = Object.fromEntries(Object.entries(previous).filter(([name, value]) => explicitDisabledEntry(value) || !isManagedEntry(name, value, previousManagedNames, managedBases)))
+  const autoEnabled = new Set(surfaces
+    .filter((surface) => surface.autoEnable && !explicitDisabledEntry(unmanaged[surface.routeSegment]))
+    .map((surface) => surface.routeSegment))
   const enabledNames = routeSegments
-    .filter((name) => explicitEnabledEntry(unmanaged[name]))
+    .filter((name) => autoEnabled.has(name) || explicitEnabledEntry(unmanaged[name]))
     .sort((a, b) => a.localeCompare(b))
   const managed = Object.fromEntries(enabledNames.map((name) => [name, mergeManagedConfig(generatedMcp[name], unmanaged[name])]))
   const nextManagedNames = [...enabledNames]

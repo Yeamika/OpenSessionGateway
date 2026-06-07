@@ -32,6 +32,12 @@ import type {
 } from "@opensessiongateway/osgp"
 import { createUpload, createResponse, createHello } from "@opensessiongateway/osgp"
 
+export type RouterLinkHandshake = {
+  protocolVersion: "osgp/1"
+  peerId: string
+  metadata?: Record<string, unknown>
+}
+
 export type {
   RouterSessionAddress,
   RouterSessionEnvelope,
@@ -132,6 +138,20 @@ export function routerEnvelopeToOsgp(env: RouterSessionEnvelope): OsgpEnvelope {
 }
 
 // ── Builder helpers ───────────────────────────────────────────────────
+
+/**
+ * Create the vNext router handshake. Addresses are announced separately.
+ */
+export function createRouterLinkHandshake(
+  peerId: string,
+  metadata?: Record<string, unknown>,
+): RouterLinkHandshake {
+  return {
+    protocolVersion: "osgp/1",
+    peerId,
+    ...(metadata && Object.keys(metadata).length > 0 ? { metadata } : {}),
+  }
+}
 
 /**
  * Create a flat LinkMessage upload envelope matching Rust serde format.

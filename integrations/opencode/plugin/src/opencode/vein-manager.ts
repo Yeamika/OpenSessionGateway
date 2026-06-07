@@ -156,7 +156,14 @@ export const VeinManager = {
         const runtime = config.runtime || nodeId
         state.runtimeID = runtime
         if (config.internalRouter) {
-          const internal = await ensureInternalRouter(config.internalRouter, state.writeLog)
+          const internalRouter = {
+            ...config.internalRouter,
+            trustedAnnouncePeers: [...new Set([
+              nodeId,
+              ...config.internalRouter.trustedAnnouncePeers,
+            ].map(text).filter(Boolean))],
+          }
+          const internal = await ensureInternalRouter(internalRouter, state.writeLog)
           state.internalRouterStarted = internal.enabled
           state.routerUrl = internal.routerUrl
         } else {
@@ -267,6 +274,16 @@ export const VeinManager = {
   upload(subtype: UploadSubtype, payload: Record<string, unknown>): boolean {
     if (!state.client) return false
     return state.client.sendUploadEvent(subtype, payload)
+  },
+  announceSession(sessionID: string): boolean {
+    const clean = text(sessionID)
+    if (!state.client || !state.runtimeID || !clean) return false
+    const source = state.client.getSourceAddress()
+    return state.client.sendAddressRegister({
+      domain: source.domain,
+      runtime: state.runtimeID,
+      session: clean,
+    })
   },
   reject(reason: string, ctx?: any) {
     void syncTuiStatus({ status: "disconnected", lastError: reason, ctx })

@@ -209,6 +209,7 @@ export class GvOpencodeInstanceClient {
 
     updateSessionState(clean, state, row?.reason || null, metadata || null)
 
+    VeinManager.announceSession(clean)
     return VeinManager.upload("session_update", payload)
   }
 

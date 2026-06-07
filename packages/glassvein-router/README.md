@@ -13,7 +13,7 @@ npm install -g @opensessiongateway/glassvein-router
 ## Run
 
 ```bash
-glassvein-router --node-id root --bind 0.0.0.0:4090
+glassvein-router --node-id root --bind-addr 0.0.0.0:4090
 ```
 
 Connect to upstream routers:
@@ -21,31 +21,14 @@ Connect to upstream routers:
 ```bash
 glassvein-router \
   --node-id edge-a \
-  --bind 0.0.0.0:4091 \
-  --upstream ws://127.0.0.1:4090
+  --bind-addr 0.0.0.0:4091 \
+  --upstream-url ws://127.0.0.1:4090
 ```
 
-Announce a local route:
+Optional state persistence:
 
 ```bash
-glassvein-router --route domain-a/runtime-a/session-a
-```
-
-Or use a JSON config:
-
-```json
-{
-  "nodeId": "edge-a",
-  "bindAddr": "0.0.0.0:4091",
-  "upstreamUrls": ["ws://127.0.0.1:4090"],
-  "announceRoutes": [
-    { "domainId": "domain-a", "runtimeId": "runtime-a", "sessionId": "session-a" }
-  ]
-}
-```
-
-```bash
-glassvein-router --config glassvein-router.json
+glassvein-router --node-id root --bind-addr 0.0.0.0:4090 --state-file ./router-state.json
 ```
 
 ## Supported npm binary targets
@@ -64,7 +47,7 @@ The npm package ships platform-specific pre-built binaries under `dist/`. To sta
 
 ```bash
 # 1. Build the Rust binary (from GlassVein root)
-cargo build --release -p glassvein-router-cli
+cargo build --release -p router
 
 # 2. Stage it into dist/linux-x64/ (default target)
 cd packages/glassvein-router
