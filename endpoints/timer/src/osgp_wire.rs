@@ -83,67 +83,27 @@ pub fn create_hello_envelope(config: &Config) -> Value {
 ///
 /// When a timer fires, the endpoint sends a `control/add_prompt` envelope
 /// to the session that created the timer (timer.runtime_id / timer.session_id).
-/// Timer metadata is embedded in the payload so the receiver can identify the
-/// source timer.
+///
+/// Payload is flat to match the opencode plugin `handleAddPrompt()` contract:
+/// - `sessionID`: target session (from timer.owner)
+/// - `msg`: the timer message
+/// - `system`: optional system prompt with timer metadata
+///
+/// The `kind` field is required by the router's `SessionEnvelope` wire format.
 pub fn create_timer_trigger_envelope(config: &Config, timer: &Timer) -> Value {
-    let timer_json = serde_json::to_value(timer).unwrap_or_default();
-
     json!({
         "type": "envelope",
         "id": Uuid::new_v4().to_string(),
+        "kind": "control.add_prompt",
         "linkType": "control",
         "subtype": "add_prompt",
         "source": address(&config.gv.domain, &config.gv.source_runtime, &config.gv.source_session),
         "target": address(&config.gv.domain, &timer.runtime_id, &timer.session_id),
         "payload": {
-            "timer": timer_json,
-            "prompt": {
-                "msg": "[OSG-Timer-Triggered]",
-                "system": timer_system_prompt(timer)
-            }
+            "sessionID": timer.session_id,
+            "msg": timer.msg,
+            "system": timer_system_prompt(timer)
         },
-        "ttl": 32,
-        "routeHops": []
-    })
-}
-
-/// Create response envelope
-pub fn create_response_envelope(
-    config: &Config,
-    request: &Value,
-    result: Option<&Value>,
-    error: Option<&str>,
-) -> Value {
-    let id = request
-        .get("id")
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string())
-        .unwrap_or_else(|| Uuid::new_v4().to_string());
-
-    let source = request.get("source").cloned().unwrap_or_else(|| {
-        address(
-            &config.gv.domain,
-            &config.gv.target_runtime,
-            &config.gv.target_session,
-        )
-    });
-
-    let payload = if let Some(err) = error {
-        json!({ "error": err })
-    } else if let Some(res) = result {
-        json!({ "result": res })
-    } else {
-        json!({ "result": null })
-    };
-
-    json!({
-        "type": "envelope",
-        "id": id,
-        "linkType": "response",
-        "subtype": request.get("subtype").and_then(|v| v.as_str()).unwrap_or("add_prompt"),
-        "source": address(&config.gv.domain, &config.gv.runtime_id, &config.gv.session_id),
-        "target": source,
-        "payload": payload,
         "ttl": 32,
         "routeHops": []
     })
@@ -204,6 +164,7 @@ mod tests {
         let envelope = create_timer_trigger_envelope(&config, &timer);
 
         assert_eq!(envelope["type"], "envelope");
+        assert_eq!(envelope["kind"], "control.add_prompt");
         assert_eq!(envelope["linkType"], "control");
         assert_eq!(envelope["subtype"], "add_prompt");
         assert!(envelope["id"].is_string());
@@ -212,42 +173,10 @@ mod tests {
         // Target must be the caller/owner session (from timer), not config default
         assert_eq!(envelope["target"]["runtime"], "test-runtime");
         assert_eq!(envelope["target"]["session"], "test-session");
-        assert!(envelope["payload"]["timer"].is_object());
-        assert!(envelope["payload"]["prompt"]["msg"].is_string());
-    }
-
-    #[test]
-    fn test_create_response_envelope() {
-        let config = default_config();
-        let request = json!({
-            "id": "req-123",
-            "subtype": "add_prompt",
-            "source": { "domain": "domain-a", "runtime": "caller", "session": "s1" }
-        });
-
-        let result = json!({ "timerId": "abc" });
-        let response = create_response_envelope(&config, &request, Some(&result), None);
-
-        assert_eq!(response["type"], "envelope");
-        assert_eq!(response["linkType"], "response");
-        assert_eq!(response["subtype"], "add_prompt");
-        assert_eq!(response["id"], "req-123");
-        assert!(response["payload"]["result"].is_object());
-    }
-
-    #[test]
-    fn test_create_response_envelope_with_error() {
-        let config = default_config();
-        let request = json!({
-            "id": "req-456",
-            "subtype": "add_prompt"
-        });
-
-        let response = create_response_envelope(&config, &request, None, Some("invalid timer"));
-
-        assert_eq!(response["linkType"], "response");
-        assert_eq!(response["subtype"], "add_prompt");
-        assert_eq!(response["payload"]["error"], "invalid timer");
+        // Flat payload — matches opencode plugin handleAddPrompt() contract
+        assert_eq!(envelope["payload"]["sessionID"], "test-session");
+        assert_eq!(envelope["payload"]["msg"], "Hello from timer");
+        assert!(envelope["payload"]["system"].is_string());
     }
 
     // ── LinkHandshake (vNext) tests ──────────────────────────────────
@@ -280,8 +209,14 @@ mod tests {
         let hs = create_link_handshake(&config);
 
         // LinkHandshake must NOT contain legacy fields
-        assert!(hs.get("role").is_none(), "LinkHandshake must not have 'role'");
-        assert!(hs.get("nodeId").is_none(), "LinkHandshake must not have 'nodeId'");
+        assert!(
+            hs.get("role").is_none(),
+            "LinkHandshake must not have 'role'"
+        );
+        assert!(
+            hs.get("nodeId").is_none(),
+            "LinkHandshake must not have 'nodeId'"
+        );
         assert!(
             hs.get("addresses").is_none(),
             "LinkHandshake must not have 'addresses'"

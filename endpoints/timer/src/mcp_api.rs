@@ -6,7 +6,7 @@
 use anyhow::{bail, Result};
 use serde_json::{json, Value};
 
-use crate::timer_store::TimerStore;
+use crate::timer_store::{CreateOneShotTimer, TimerStore};
 
 /// MCP scope: self (per-runtime) or manager (cross-runtime).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -27,12 +27,7 @@ impl McpApi {
     }
 
     /// Handle a JSON-RPC request body. Returns the full JSON-RPC response.
-    pub async fn handle_request(
-        &self,
-        scope: McpScope,
-        runtime_id: &str,
-        body: Value,
-    ) -> Value {
+    pub async fn handle_request(&self, scope: McpScope, runtime_id: &str, body: Value) -> Value {
         let id = body.get("id").cloned().unwrap_or(Value::Null);
         let method = body
             .get("method")
@@ -44,10 +39,7 @@ impl McpApi {
         match method.as_str() {
             "initialize" => self.handle_initialize(id, scope),
             "tools/list" => self.handle_tools_list(id, scope),
-            "tools/call" => {
-                self.handle_tools_call(id, scope, runtime_id, params)
-                    .await
-            }
+            "tools/call" => self.handle_tools_call(id, scope, runtime_id, params).await,
             _ => json_rpc_error(id, -32601, format!("method not found: {method}")),
         }
     }
@@ -83,10 +75,7 @@ impl McpApi {
         params: Value,
     ) -> Value {
         let name = params.get("name").and_then(|v| v.as_str()).unwrap_or("");
-        let args = params
-            .get("arguments")
-            .cloned()
-            .unwrap_or(json!({}));
+        let args = params.get("arguments").cloned().unwrap_or(json!({}));
 
         match self.call_tool(scope, runtime_id, name, args).await {
             Ok(result) => json_rpc_ok(id, mcp_text_result(result)),
@@ -106,15 +95,15 @@ impl McpApi {
                 let normalized = normalize_create_args(scope, runtime_id, &args)?;
                 let timer = self
                     .store
-                    .create_one_shot_timer(
-                        &normalized.runtime_id,
-                        &normalized.session_id,
-                        &normalized.executor_runtime_id,
-                        &normalized.executor_session_id,
-                        &normalized.title,
-                        &normalized.msg,
-                        normalized.after_seconds,
-                    )
+                    .create_one_shot_timer(CreateOneShotTimer {
+                        runtime_id: &normalized.runtime_id,
+                        session_id: &normalized.session_id,
+                        executor_runtime_id: &normalized.executor_runtime_id,
+                        executor_session_id: &normalized.executor_session_id,
+                        title: &normalized.title,
+                        msg: &normalized.msg,
+                        after_seconds: normalized.after_seconds,
+                    })
                     .await?;
                 Ok(json!({
                     "ok": true,
@@ -190,6 +179,8 @@ fn normalize_executor(args: &Value) -> Result<ExecutorInfo> {
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string(),
+        // ExecutorSessionID is externally injected by the MCP host/runtime.
+        // The endpoint requires it as the first audit/ownership argument.
         executor_session_id: require_text(args, "ExecutorSessionID")?,
     })
 }
@@ -201,10 +192,17 @@ fn normalize_create_args(
 ) -> Result<NormalizedCreate> {
     let executor = normalize_executor(args)?;
     let (rt, ses) = match scope {
-        McpScope::Self_ => (
-            runtime_id.to_string(),
-            executor.executor_session_id.clone(),
-        ),
+        McpScope::Self_ => {
+            // For self-scope: caller's runtime comes from ExecutorRuntimeID arg
+            // (if provided), otherwise from the query parameter. Session always
+            // comes from ExecutorSessionID (the caller's session).
+            let caller_rt = if !executor.executor_runtime_id.is_empty() {
+                executor.executor_runtime_id.clone()
+            } else {
+                runtime_id.to_string()
+            };
+            (caller_rt, executor.executor_session_id.clone())
+        }
         McpScope::Manager => (
             require_text(args, "runtimeID")?,
             require_text(args, "sessionID")?,
@@ -213,7 +211,9 @@ fn normalize_create_args(
     let after_seconds = args
         .get("afterSeconds")
         .and_then(|v| v.as_u64())
-        .ok_or_else(|| anyhow::anyhow!("afterSeconds is required and must be a positive integer"))?;
+        .ok_or_else(|| {
+            anyhow::anyhow!("afterSeconds is required and must be a positive integer")
+        })?;
 
     Ok(NormalizedCreate {
         runtime_id: rt,
@@ -237,10 +237,14 @@ fn normalize_owner_args(
 ) -> Result<NormalizedOwner> {
     let executor = normalize_executor(args)?;
     let (rt, ses) = match scope {
-        McpScope::Self_ => (
-            runtime_id.to_string(),
-            executor.executor_session_id.clone(),
-        ),
+        McpScope::Self_ => {
+            let caller_rt = if !executor.executor_runtime_id.is_empty() {
+                executor.executor_runtime_id.clone()
+            } else {
+                runtime_id.to_string()
+            };
+            (caller_rt, executor.executor_session_id.clone())
+        }
         McpScope::Manager => (
             require_text(args, "runtimeID")?,
             require_text(args, "sessionID")?,
@@ -268,6 +272,15 @@ fn require_text(args: &Value, key: &str) -> Result<String> {
 // ── Tool schemas ────────────────────────────────────────────────────
 
 fn self_tools() -> Value {
+    let executor_runtime = json!({
+        "type": "string",
+        "description": "Optional externally injected caller runtimeID for audit"
+    });
+    let executor_session = json!({
+        "type": "string",
+        "description": "Externally injected caller sessionID; first required argument for audit and timer ownership"
+    });
+
     json!([
         tool_def(
             "CreateOneShotTimer",
@@ -275,8 +288,8 @@ fn self_tools() -> Value {
             json!({
                 "type": "object",
                 "properties": {
-                    "ExecutorRuntimeID": { "type": "string", "description": "Optional caller runtimeID for audit" },
-                    "ExecutorSessionID": { "type": "string", "description": "Caller sessionID (owner of the timer)" },
+                    "ExecutorRuntimeID": executor_runtime,
+                    "ExecutorSessionID": executor_session,
                     "title": { "type": "string", "description": "Optional timer title" },
                     "msg": { "type": "string", "description": "Timer message delivered when fired" },
                     "afterSeconds": { "type": "integer", "description": "Seconds until timer fires" }
@@ -291,8 +304,8 @@ fn self_tools() -> Value {
             json!({
                 "type": "object",
                 "properties": {
-                    "ExecutorRuntimeID": { "type": "string" },
-                    "ExecutorSessionID": { "type": "string" },
+                    "ExecutorRuntimeID": executor_runtime,
+                    "ExecutorSessionID": executor_session,
                     "timerID": { "type": "string", "description": "Timer ID to delete" }
                 },
                 "required": ["ExecutorSessionID", "timerID"],
@@ -305,8 +318,8 @@ fn self_tools() -> Value {
             json!({
                 "type": "object",
                 "properties": {
-                    "ExecutorRuntimeID": { "type": "string" },
-                    "ExecutorSessionID": { "type": "string" }
+                    "ExecutorRuntimeID": executor_runtime,
+                    "ExecutorSessionID": executor_session
                 },
                 "required": ["ExecutorSessionID"],
                 "additionalProperties": false
@@ -316,41 +329,37 @@ fn self_tools() -> Value {
 }
 
 fn manager_tools() -> Value {
-    let mut tools = self_tools();
-    let arr = tools.as_array_mut().unwrap();
-    arr.push(tool_def(
-        "ListAllTimers",
-        "List all timers across all runtimes/sessions (manager only)",
-        json!({
-            "type": "object",
-            "properties": {
-                "ExecutorRuntimeID": { "type": "string" },
-                "ExecutorSessionID": { "type": "string" }
-            },
-            "required": ["ExecutorSessionID"],
-            "additionalProperties": false
-        }),
-    ));
-    // Manager variants of create/delete/list with explicit runtimeID/sessionID
-    arr.push(tool_def(
-        "CreateOneShotTimer",
-        "Create a one-shot timer for a specific runtime/session (manager)",
-        json!({
-            "type": "object",
-            "properties": {
-                "ExecutorRuntimeID": { "type": "string" },
-                "ExecutorSessionID": { "type": "string" },
-                "runtimeID": { "type": "string", "description": "Target runtimeID" },
-                "sessionID": { "type": "string", "description": "Target sessionID" },
-                "title": { "type": "string" },
-                "msg": { "type": "string" },
-                "afterSeconds": { "type": "integer" }
-            },
-            "required": ["ExecutorSessionID", "runtimeID", "sessionID", "msg", "afterSeconds"],
-            "additionalProperties": false
-        }),
-    ));
-    tools
+    json!([
+        manager_tool_def(
+            "CreateOneShotTimer",
+            "Create a one-shot timer for a specific runtime/session",
+            json!({
+                "title": { "type": "string", "description": "Optional timer title" },
+                "msg": { "type": "string", "description": "Timer message delivered when fired" },
+                "afterSeconds": { "type": "integer", "description": "Seconds until timer fires" }
+            }),
+            json!(["msg", "afterSeconds"])
+        ),
+        manager_tool_def(
+            "DeleteRuntimeTimer",
+            "Delete a pending timer by ID for a specific runtime/session",
+            json!({
+                "timerID": { "type": "string", "description": "Timer ID to delete" }
+            }),
+            json!(["timerID"])
+        ),
+        manager_tool_def(
+            "ListRuntimeTimers",
+            "List timers for a specific runtime/session",
+            json!({}),
+            json!([])
+        ),
+        tool_def(
+            "ListAllTimers",
+            "List all timers across all runtimes/sessions",
+            manager_executor_schema()
+        )
+    ])
 }
 
 fn tool_def(name: &str, description: &str, input_schema: Value) -> Value {
@@ -358,6 +367,62 @@ fn tool_def(name: &str, description: &str, input_schema: Value) -> Value {
         "name": name,
         "description": description,
         "inputSchema": input_schema
+    })
+}
+
+fn manager_tool_def(
+    name: &str,
+    description: &str,
+    extra_properties: Value,
+    extra_required: Value,
+) -> Value {
+    let mut schema = manager_executor_schema();
+    let properties = schema
+        .get_mut("properties")
+        .and_then(Value::as_object_mut)
+        .expect("manager schema properties");
+    properties.insert(
+        "runtimeID".to_string(),
+        json!({ "type": "string", "description": "Target runtimeID" }),
+    );
+    properties.insert(
+        "sessionID".to_string(),
+        json!({ "type": "string", "description": "Target sessionID; distinct from injected ExecutorSessionID" }),
+    );
+    if let Some(extra) = extra_properties.as_object() {
+        for (key, value) in extra {
+            properties.insert(key.clone(), value.clone());
+        }
+    }
+
+    let required = schema
+        .get_mut("required")
+        .and_then(Value::as_array_mut)
+        .expect("manager schema required");
+    required.push(json!("runtimeID"));
+    required.push(json!("sessionID"));
+    if let Some(extra) = extra_required.as_array() {
+        required.extend(extra.iter().cloned());
+    }
+
+    tool_def(name, description, schema)
+}
+
+fn manager_executor_schema() -> Value {
+    json!({
+        "type": "object",
+        "properties": {
+            "ExecutorRuntimeID": {
+                "type": "string",
+                "description": "Optional externally injected caller runtimeID for audit"
+            },
+            "ExecutorSessionID": {
+                "type": "string",
+                "description": "Externally injected caller sessionID; first required argument for audit"
+            }
+        },
+        "required": ["ExecutorSessionID"],
+        "additionalProperties": false
     })
 }
 
@@ -376,266 +441,4 @@ fn mcp_text_result(data: Value) -> Value {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use serde_json::json;
-
-    fn self_request(method: &str, params: Value) -> Value {
-        json!({ "id": 1, "method": method, "params": params })
-    }
-
-    #[tokio::test]
-    async fn test_initialize_self() {
-        let api = McpApi::new(TimerStore::new());
-        let resp = api
-            .handle_request(McpScope::Self_, "test-rt", self_request("initialize", json!({})))
-            .await;
-        assert_eq!(resp["jsonrpc"], "2.0");
-        assert_eq!(resp["result"]["protocolVersion"], "2025-03-26");
-        assert_eq!(resp["result"]["serverInfo"]["name"], "timer_self");
-    }
-
-    #[tokio::test]
-    async fn test_initialize_manager() {
-        let api = McpApi::new(TimerStore::new());
-        let resp = api
-            .handle_request(
-                McpScope::Manager,
-                "test-rt",
-                self_request("initialize", json!({})),
-            )
-            .await;
-        assert_eq!(resp["result"]["serverInfo"]["name"], "timer_manager");
-    }
-
-    #[tokio::test]
-    async fn test_tools_list_self() {
-        let api = McpApi::new(TimerStore::new());
-        let resp = api
-            .handle_request(McpScope::Self_, "test-rt", self_request("tools/list", json!({})))
-            .await;
-        let tools = resp["result"]["tools"].as_array().unwrap();
-        assert!(tools.iter().any(|t| t["name"] == "CreateOneShotTimer"));
-        assert!(tools.iter().any(|t| t["name"] == "ListRuntimeTimers"));
-        // Self scope should NOT have ListAllTimers
-        assert!(!tools.iter().any(|t| t["name"] == "ListAllTimers"));
-    }
-
-    #[tokio::test]
-    async fn test_tools_list_manager() {
-        let api = McpApi::new(TimerStore::new());
-        let resp = api
-            .handle_request(
-                McpScope::Manager,
-                "test-rt",
-                self_request("tools/list", json!({})),
-            )
-            .await;
-        let tools = resp["result"]["tools"].as_array().unwrap();
-        assert!(tools.iter().any(|t| t["name"] == "ListAllTimers"));
-    }
-
-    #[tokio::test]
-    async fn test_create_one_shot_self_scope() {
-        let api = McpApi::new(TimerStore::new());
-        let resp = api
-            .handle_request(
-                McpScope::Self_,
-                "my-runtime",
-                self_request(
-                    "tools/call",
-                    json!({
-                        "name": "CreateOneShotTimer",
-                        "arguments": {
-                            "ExecutorSessionID": "my-session",
-                            "msg": "hello",
-                            "afterSeconds": 30
-                        }
-                    }),
-                ),
-            )
-            .await;
-        let text = resp["result"]["content"][0]["text"].as_str().unwrap();
-        let result: Value = serde_json::from_str(text).unwrap();
-        assert_eq!(result["ok"], true);
-        assert_eq!(result["runtime_id"], "my-runtime");
-        assert_eq!(result["session_id"], "my-session");
-        assert_eq!(result["timer_type"], "one_shot");
-        assert!(!result["timer_id"].as_str().unwrap().is_empty());
-    }
-
-    #[tokio::test]
-    async fn test_create_and_list_and_delete() {
-        let api = McpApi::new(TimerStore::new());
-
-        // Create
-        let resp = api
-            .handle_request(
-                McpScope::Self_,
-                "rt1",
-                self_request(
-                    "tools/call",
-                    json!({
-                        "name": "CreateOneShotTimer",
-                        "arguments": {
-                            "ExecutorSessionID": "ses1",
-                            "msg": "test",
-                            "afterSeconds": 60
-                        }
-                    }),
-                ),
-            )
-            .await;
-        let text = resp["result"]["content"][0]["text"].as_str().unwrap();
-        let created: Value = serde_json::from_str(text).unwrap();
-        let timer_id = created["timer_id"].as_str().unwrap();
-
-        // List
-        let resp = api
-            .handle_request(
-                McpScope::Self_,
-                "rt1",
-                self_request(
-                    "tools/call",
-                    json!({
-                        "name": "ListRuntimeTimers",
-                        "arguments": { "ExecutorSessionID": "ses1" }
-                    }),
-                ),
-            )
-            .await;
-        let text = resp["result"]["content"][0]["text"].as_str().unwrap();
-        let list_result: Value = serde_json::from_str(text).unwrap();
-        assert_eq!(list_result["realsize"], 1);
-
-        // Delete
-        let resp = api
-            .handle_request(
-                McpScope::Self_,
-                "rt1",
-                self_request(
-                    "tools/call",
-                    json!({
-                        "name": "DeleteRuntimeTimer",
-                        "arguments": {
-                            "ExecutorSessionID": "ses1",
-                            "timerID": timer_id
-                        }
-                    }),
-                ),
-            )
-            .await;
-        let text = resp["result"]["content"][0]["text"].as_str().unwrap();
-        let delete_result: Value = serde_json::from_str(text).unwrap();
-        assert_eq!(delete_result["ok"], true);
-
-        // List again — should be empty
-        let resp = api
-            .handle_request(
-                McpScope::Self_,
-                "rt1",
-                self_request(
-                    "tools/call",
-                    json!({
-                        "name": "ListRuntimeTimers",
-                        "arguments": { "ExecutorSessionID": "ses1" }
-                    }),
-                ),
-            )
-            .await;
-        let text = resp["result"]["content"][0]["text"].as_str().unwrap();
-        let list_result: Value = serde_json::from_str(text).unwrap();
-        assert_eq!(list_result["realsize"], 0);
-    }
-
-    #[tokio::test]
-    async fn test_list_all_timers_manager() {
-        let api = McpApi::new(TimerStore::new());
-
-        // Create in self scope
-        api.handle_request(
-            McpScope::Self_,
-            "rt1",
-            self_request(
-                "tools/call",
-                json!({
-                    "name": "CreateOneShotTimer",
-                    "arguments": { "ExecutorSessionID": "ses1", "msg": "hi", "afterSeconds": 10 }
-                }),
-            ),
-        )
-        .await;
-
-        // ListAll in manager scope
-        let resp = api
-            .handle_request(
-                McpScope::Manager,
-                "rt1",
-                self_request(
-                    "tools/call",
-                    json!({
-                        "name": "ListAllTimers",
-                        "arguments": { "ExecutorSessionID": "admin" }
-                    }),
-                ),
-            )
-            .await;
-        let text = resp["result"]["content"][0]["text"].as_str().unwrap();
-        let result: Value = serde_json::from_str(text).unwrap();
-        assert_eq!(result["realsize"], 1);
-    }
-
-    #[tokio::test]
-    async fn test_unknown_method_returns_error() {
-        let api = McpApi::new(TimerStore::new());
-        let resp = api
-            .handle_request(
-                McpScope::Self_,
-                "rt1",
-                self_request("bogus/method", json!({})),
-            )
-            .await;
-        assert!(resp.get("error").is_some());
-        assert_eq!(resp["error"]["code"], -32601);
-    }
-
-    #[tokio::test]
-    async fn test_create_rejects_empty_msg() {
-        let api = McpApi::new(TimerStore::new());
-        let resp = api
-            .handle_request(
-                McpScope::Self_,
-                "rt1",
-                self_request(
-                    "tools/call",
-                    json!({
-                        "name": "CreateOneShotTimer",
-                        "arguments": { "ExecutorSessionID": "ses1", "msg": "", "afterSeconds": 10 }
-                    }),
-                ),
-            )
-            .await;
-        assert!(resp.get("error").is_some());
-    }
-
-    #[tokio::test]
-    async fn test_periodic_returns_unsupported() {
-        let api = McpApi::new(TimerStore::new());
-        let resp = api
-            .handle_request(
-                McpScope::Self_,
-                "rt1",
-                self_request(
-                    "tools/call",
-                    json!({
-                        "name": "CreatePeriodicTimer",
-                        "arguments": { "ExecutorSessionID": "ses1", "msg": "hi", "everySeconds": 10 }
-                    }),
-                ),
-            )
-            .await;
-        assert!(resp.get("error").is_some());
-        let msg = resp["error"]["message"].as_str().unwrap();
-        assert!(msg.contains("not supported"));
-    }
-}
+mod tests;

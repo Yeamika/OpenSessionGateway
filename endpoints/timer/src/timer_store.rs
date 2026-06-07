@@ -48,7 +48,7 @@ impl std::fmt::Display for TimerStatus {
     }
 }
 
-/// Timer data structure — field names match TypeScript wire format.
+/// Timer data structure. Field names preserve the legacy MCP result format.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Timer {
     #[serde(rename = "TimerID")]
@@ -78,6 +78,17 @@ pub struct Timer {
     pub status: TimerStatus,
 }
 
+/// Input for creating a one-shot timer.
+pub struct CreateOneShotTimer<'a> {
+    pub runtime_id: &'a str,
+    pub session_id: &'a str,
+    pub executor_runtime_id: &'a str,
+    pub executor_session_id: &'a str,
+    pub title: &'a str,
+    pub msg: &'a str,
+    pub after_seconds: u64,
+}
+
 /// Thread-safe timer store.
 #[derive(Clone)]
 pub struct TimerStore {
@@ -95,16 +106,16 @@ impl TimerStore {
     /// Create a one-shot timer. Returns the created Timer.
     ///
     /// Owner is `(runtime_id, session_id)` — typically the caller session.
-    pub async fn create_one_shot_timer(
-        &self,
-        runtime_id: &str,
-        session_id: &str,
-        executor_runtime_id: &str,
-        executor_session_id: &str,
-        title: &str,
-        msg: &str,
-        after_seconds: u64,
-    ) -> Result<Timer> {
+    pub async fn create_one_shot_timer(&self, input: CreateOneShotTimer<'_>) -> Result<Timer> {
+        let CreateOneShotTimer {
+            runtime_id,
+            session_id,
+            executor_runtime_id,
+            executor_session_id,
+            title,
+            msg,
+            after_seconds,
+        } = input;
         if after_seconds == 0 {
             bail!("afterSeconds must be a positive integer");
         }
@@ -115,7 +126,7 @@ impl TimerStore {
         let now_ms = epoch_ms();
         let timer_id = format!("timer-{}", Uuid::new_v4());
         let created_at = ms_to_iso(now_ms);
-        let trigger_at = ms_to_iso(now_ms + (after_seconds as u64) * 1000);
+        let trigger_at = ms_to_iso(now_ms + after_seconds * 1000);
 
         let timer = Timer {
             timer_id: timer_id.clone(),
@@ -276,9 +287,7 @@ pub fn ms_to_iso(ms: u64) -> String {
     }
     let day = days_left + 1;
 
-    format!(
-        "{year:04}-{month:02}-{day:02}T{hour:02}:{min:02}:{sec:02}.{millis:03}Z"
-    )
+    format!("{year:04}-{month:02}-{day:02}T{hour:02}:{min:02}:{sec:02}.{millis:03}Z")
 }
 
 /// Parse ISO 8601 string to epoch milliseconds.
@@ -327,155 +336,8 @@ fn days_since_epoch(year: u64, month: u64, day: u64) -> u64 {
 }
 
 fn is_leap(year: u64) -> bool {
-    (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0)
+    (year.is_multiple_of(4) && !year.is_multiple_of(100)) || year.is_multiple_of(400)
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[tokio::test]
-    async fn test_create_and_list_one_shot() {
-        let store = TimerStore::new();
-        let timer = store
-            .create_one_shot_timer("rt1", "ses1", "exec-rt", "exec-ses", "test", "hello", 60)
-            .await
-            .unwrap();
-
-        assert!(!timer.timer_id.is_empty());
-        assert_eq!(timer.runtime_id, "rt1");
-        assert_eq!(timer.session_id, "ses1");
-        assert_eq!(timer.timer_type, TimerType::OneShot);
-        assert_eq!(timer.status, TimerStatus::Pending);
-        assert_eq!(timer.msg, "hello");
-        assert_eq!(timer.delay_seconds, 60);
-
-        let list = store.list_timers("rt1", "ses1").await;
-        assert_eq!(list.len(), 1);
-        assert_eq!(list[0].timer_id, timer.timer_id);
-    }
-
-    #[tokio::test]
-    async fn test_delete_timer() {
-        let store = TimerStore::new();
-        let timer = store
-            .create_one_shot_timer("rt1", "ses1", "exec-rt", "exec-ses", "test", "hello", 60)
-            .await
-            .unwrap();
-
-        let deleted = store
-            .delete_timer(&timer.timer_id, "rt1", "ses1")
-            .await
-            .unwrap();
-        assert!(deleted);
-
-        let list = store.list_timers("rt1", "ses1").await;
-        assert_eq!(list.len(), 0);
-    }
-
-    #[tokio::test]
-    async fn test_delete_wrong_session_fails() {
-        let store = TimerStore::new();
-        let timer = store
-            .create_one_shot_timer("rt1", "ses1", "exec-rt", "exec-ses", "test", "hello", 60)
-            .await
-            .unwrap();
-
-        let result = store
-            .delete_timer(&timer.timer_id, "rt1", "wrong-ses")
-            .await;
-        assert!(result.is_err());
-    }
-
-    #[tokio::test]
-    async fn test_drain_due_timers_removes_one_shot() {
-        let store = TimerStore::new();
-
-        let timer = store
-            .create_one_shot_timer("rt1", "ses1", "exec-rt", "exec-ses", "test", "hello", 60)
-            .await
-            .unwrap();
-
-        // Set trigger_at to the past
-        {
-            let mut timers = store.timers.write().await;
-            if let Some(t) = timers.get_mut(&timer.timer_id) {
-                t.trigger_at = "2020-01-01T00:00:00.000Z".to_string();
-            }
-        }
-
-        let due = store.drain_due_timers().await;
-        assert_eq!(due.len(), 1);
-        assert_eq!(due[0].timer_id, timer.timer_id);
-
-        // One-shot removed from store
-        let list = store.list_all_timers().await;
-        assert_eq!(list.len(), 0);
-    }
-
-    #[tokio::test]
-    async fn test_drain_non_due_timer_stays() {
-        let store = TimerStore::new();
-
-        let _timer = store
-            .create_one_shot_timer("rt1", "ses1", "exec-rt", "exec-ses", "test", "hello", 3600)
-            .await
-            .unwrap();
-
-        let due = store.drain_due_timers().await;
-        assert_eq!(due.len(), 0);
-
-        let list = store.list_all_timers().await;
-        assert_eq!(list.len(), 1);
-    }
-
-    #[tokio::test]
-    async fn test_list_all_timers() {
-        let store = TimerStore::new();
-        store
-            .create_one_shot_timer("rt1", "ses1", "exec-rt", "exec-ses", "t1", "msg1", 60)
-            .await
-            .unwrap();
-        store
-            .create_one_shot_timer("rt2", "ses2", "exec-rt", "exec-ses", "t2", "msg2", 120)
-            .await
-            .unwrap();
-
-        let all = store.list_all_timers().await;
-        assert_eq!(all.len(), 2);
-    }
-
-    #[tokio::test]
-    async fn test_create_rejects_empty_msg() {
-        let store = TimerStore::new();
-        let result = store
-            .create_one_shot_timer("rt1", "ses1", "exec-rt", "exec-ses", "test", "", 60)
-            .await;
-        assert!(result.is_err());
-    }
-
-    #[tokio::test]
-    async fn test_create_rejects_zero_seconds() {
-        let store = TimerStore::new();
-        let result = store
-            .create_one_shot_timer("rt1", "ses1", "exec-rt", "exec-ses", "test", "hello", 0)
-            .await;
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_iso_roundtrip() {
-        let ms = iso_to_ms("2026-01-01T00:00:00.000Z");
-        let iso = ms_to_iso(ms);
-        let ms2 = iso_to_ms(&iso);
-        assert_eq!(ms, ms2);
-    }
-
-    #[test]
-    fn test_ms_to_iso_known_value() {
-        // 2026-01-01T00:00:00.000Z
-        let ms = iso_to_ms("2026-01-01T00:00:00.000Z");
-        let iso = ms_to_iso(ms);
-        assert!(iso.starts_with("2026-01-01T00:00:00"));
-    }
-}
+mod tests;

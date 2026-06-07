@@ -40,11 +40,16 @@ router/ → router crate（router runtime、邻居编排、连接管理）
 ### Rust 端点（endpoints）
 
 ```text
-endpoints/console/    → console-endpoint（人用 TUI，会话查看 + control/request）
-endpoints/requestion/ → requestion-endpoint
+endpoints/console/         → console-endpoint（人用 TUI，会话查看 + control/request）
+endpoints/requestion/      → requestion-endpoint
+endpoints/session-control/ → session-control-endpoint
+endpoints/mailbox/         → mailbox-endpoint
+endpoints/im/              → im-endpoint
+endpoints/timer/           → timer-endpoint（Rust-only timer MCP + one-shot scheduler）
 ```
 
 - `endpoints/control/` 与 `endpoints/viewer/` 已由 `endpoints/console/` 取代；旧目录若存在只能保留 README redirect/历史说明，不应作为 Cargo workspace active endpoint。
+- `endpoints/timer/` 的旧 Node/JavaScript 服务实现与浏览器 UI 已移除；不要恢复 `src/*.js`、`test/*.js`、`package.json` 或 `web/`。
 
 ### Rust Surface 库
 

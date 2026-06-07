@@ -10,7 +10,6 @@ use std::path::Path;
 pub struct Config {
     pub listen: ListenConfig,
     pub gv: GvConfig,
-    pub web_executor: WebExecutorConfig,
 }
 
 /// Listen configuration
@@ -35,21 +34,9 @@ pub struct GvConfig {
     pub session_id: String,
     pub source_runtime: String,
     pub source_session: String,
-    pub target_runtime: String,
-    pub target_session: String,
 }
 
-/// Web executor configuration
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct WebExecutorConfig {
-    #[serde(rename = "runtimeID")]
-    pub runtime_id: String,
-    #[serde(rename = "sessionID")]
-    pub session_id: String,
-}
-
-/// Default configuration values (matching TypeScript version)
+/// Default configuration values.
 pub fn default_config() -> Config {
     Config {
         listen: ListenConfig {
@@ -64,12 +51,6 @@ pub fn default_config() -> Config {
             session_id: "timer".to_string(),
             source_runtime: "timer-endpoint".to_string(),
             source_session: "timer".to_string(),
-            target_runtime: "target-runtime-placeholder".to_string(),
-            target_session: "target-session-placeholder".to_string(),
-        },
-        web_executor: WebExecutorConfig {
-            runtime_id: "timer-web-caller".to_string(),
-            session_id: "timer-web-session".to_string(),
         },
     }
 }
@@ -115,11 +96,6 @@ pub fn load_config(path: Option<&str>) -> Result<Config> {
     }
 }
 
-/// Reload configuration from the same file path
-pub fn reload_config(path: &str) -> Result<Config> {
-    load_config(Some(path))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -130,7 +106,6 @@ mod tests {
         assert_eq!(config.listen.host, "127.0.0.1");
         assert_eq!(config.listen.port, 8789);
         assert_eq!(config.gv.runtime_id, "timer-endpoint");
-        assert_eq!(config.web_executor.runtime_id, "timer-web-caller");
     }
 
     #[test]
@@ -143,13 +118,7 @@ mod tests {
                 "runtimeID": "test-runtime",
                 "sessionID": "test-session",
                 "sourceRuntime": "test-source",
-                "sourceSession": "test-source-session",
-                "targetRuntime": "test-target",
-                "targetSession": "test-target-session"
-            },
-            "webExecutor": {
-                "runtimeID": "web-runtime",
-                "sessionID": "web-session"
+                "sourceSession": "test-source-session"
             }
         }"#;
 
@@ -181,13 +150,7 @@ mod tests {
                 "runtimeID": "test-runtime",
                 "sessionID": "test-session",
                 "sourceRuntime": "test-source",
-                "sourceSession": "test-source-session",
-                "targetRuntime": "test-target",
-                "targetSession": "test-target-session"
-            },
-            "webExecutor": {
-                "runtimeID": "web-runtime",
-                "sessionID": "web-session"
+                "sourceSession": "test-source-session"
             }
         }"#;
 
@@ -196,8 +159,8 @@ mod tests {
 
         // With explicit peer_id
         let json_with_peer = json.replace(
-            "\"targetSession\": \"test-target-session\"",
-            "\"targetSession\": \"test-target-session\",\n                \"peerId\": \"my-timer-peer\"",
+            "\"sourceSession\": \"test-source-session\"",
+            "\"sourceSession\": \"test-source-session\",\n                \"peerId\": \"my-timer-peer\"",
         );
         let config2: Config = serde_json::from_str(&json_with_peer).unwrap();
         assert_eq!(

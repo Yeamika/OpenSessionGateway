@@ -8,7 +8,6 @@
 use anyhow::Result;
 use axum::{
     extract::{Query, State},
-    http::StatusCode,
     response::IntoResponse,
     routing::{get, post},
     Json, Router,
@@ -65,10 +64,11 @@ async fn handle_scheduler(
     Query(query): Query<SchedulerQuery>,
     Json(body): Json<Value>,
 ) -> impl IntoResponse {
-    let runtime_id = query
-        .runtime_id
-        .unwrap_or_else(|| state.runtime_id.clone());
-    let resp = state.mcp.handle_request(McpScope::Self_, &runtime_id, body).await;
+    let runtime_id = query.runtime_id.unwrap_or_else(|| state.runtime_id.clone());
+    let resp = state
+        .mcp
+        .handle_request(McpScope::Self_, &runtime_id, body)
+        .await;
     Json(resp)
 }
 

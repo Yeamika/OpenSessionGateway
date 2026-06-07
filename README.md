@@ -11,9 +11,12 @@ clients/rust/                       # osgp-client — Rust client SDK
 core/                               # core — pure route table, TTL/trace, next-hop decisions
 router/                             # router — runtime, neighbor orchestration, connection mgmt
 
-endpoints/control/                  # control-endpoint
-endpoints/viewer/                   # surface-viewer
 endpoints/requestion/               # requestion-endpoint
+endpoints/console/                  # console-endpoint
+endpoints/session-control/          # session-control-endpoint
+endpoints/mailbox/                  # mailbox-endpoint
+endpoints/im/                       # im-endpoint
+endpoints/timer/                    # timer-endpoint
 
 crates/surface/                     # surface library (observer + control + query)
 
@@ -24,6 +27,9 @@ demos/                              # demo binaries (alpha/beta/gamma-client)
 examples/                           # OSGP endpoint examples (Rust + TypeScript)
 legacy/                             # archived pre-refactor glassvein-* crates (not in workspace)
 ```
+
+`endpoints/control/` and `endpoints/viewer/` are retired names; use
+`endpoints/console/` for the active human console endpoint.
 
 See [`docs/CRATE_BOUNDARIES.md`](docs/CRATE_BOUNDARIES.md) for dependency rules and [`docs/MULTI_NODE_PROGRAMS.md`](docs/MULTI_NODE_PROGRAMS.md) for commands.
 

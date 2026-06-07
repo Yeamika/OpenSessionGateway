@@ -6,12 +6,6 @@
     "runtimeID": "timer-endpoint",
     "sessionID": "timer",
     "sourceRuntime": "timer-endpoint",
-    "sourceSession": "timer",
-    "targetRuntime": "target-runtime-placeholder",
-    "targetSession": "target-session-placeholder"
-  },
-  "webExecutor": {
-    "runtimeID": "timer-web-caller",
-    "sessionID": "timer-web-session"
+    "sourceSession": "timer"
   }
 }

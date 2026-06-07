@@ -9,7 +9,6 @@ use anyhow::Result;
 use tracing::info;
 
 mod config;
-mod cron;
 mod gv_client;
 mod mcp_api;
 mod osgp_wire;
@@ -57,15 +56,14 @@ async fn main() -> Result<()> {
     };
 
     // HTTP listen address
-    let addr = format!("{}:{}", cfg.listen.host, cfg.listen.port)
-        .parse::<std::net::SocketAddr>()?;
+    let addr =
+        format!("{}:{}", cfg.listen.host, cfg.listen.port).parse::<std::net::SocketAddr>()?;
 
     // Spawn timer scheduler loop
     let scheduler_gv = gv.clone();
     let scheduler_store = store.clone();
-    let scheduler_config = cfg.clone();
     let scheduler_handle = tokio::spawn(async move {
-        scheduler_loop(scheduler_gv, scheduler_store, scheduler_config).await;
+        scheduler_loop(scheduler_gv, scheduler_store).await;
     });
 
     // Run HTTP server (blocks until shutdown signal)
@@ -79,11 +77,7 @@ async fn main() -> Result<()> {
 }
 
 /// Scheduler loop: every 500ms, drain due timers and send control/add_prompt.
-async fn scheduler_loop(
-    gv: gv_client::GvClient,
-    store: timer_store::TimerStore,
-    cfg: config::Config,
-) {
+async fn scheduler_loop(gv: gv_client::GvClient, store: timer_store::TimerStore) {
     info!("timer scheduler loop started");
     loop {
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
@@ -98,9 +92,7 @@ async fn scheduler_loop(
                 "timer fired — sending control/add_prompt"
             );
 
-            // Build and send canonical control/add_prompt envelope
-            let envelope = osgp_wire::create_timer_trigger_envelope(&cfg, &timer);
-            if let Err(e) = gv.send_json(envelope) {
+            if let Err(e) = gv.send_timer_trigger(&timer) {
                 tracing::error!(
                     timer_id = %timer.timer_id,
                     error = %e,

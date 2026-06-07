@@ -77,20 +77,6 @@ impl GvClient {
             .map_err(|_| anyhow::anyhow!("GV client channel closed"))?;
         Ok(())
     }
-
-    /// Send a raw JSON value to the router.
-    pub fn send_json(&self, value: Value) -> Result<()> {
-        self.tx
-            .send(value)
-            .map_err(|_| anyhow::anyhow!("GV client channel closed"))?;
-        Ok(())
-    }
-
-    /// Update configuration (e.g., on config reload).
-    /// The background task will reconnect if router_url changes.
-    pub fn update_config(&self, config: Config) {
-        let _ = self.config_tx.send(config);
-    }
 }
 
 /// Background task that manages the WebSocket connection lifecycle.
@@ -122,8 +108,14 @@ async fn connection_task(
         let _ = state_tx.send(ConnectionState::Connecting);
         info!(url = %router_url, "connecting to GV router");
 
-        match connect_and_run(&config, &router_url, &mut config_rx, &mut outbound_rx, &state_tx)
-            .await
+        match connect_and_run(
+            &config,
+            &router_url,
+            &mut config_rx,
+            &mut outbound_rx,
+            &state_tx,
+        )
+        .await
         {
             Ok(()) => {
                 // Clean exit (config changed, trigger reconnect)
@@ -235,11 +227,8 @@ async fn connect_and_run(
                     Some(Ok(Message::Text(text))) => {
                         handle_inbound_text(&text, &mut writer).await;
                     }
-                    Some(Ok(Message::Ping(data))) => {
-                        if writer.send(Message::Pong(data)).await.is_err() {
-                            break;
-                        }
-                    }
+                    Some(Ok(Message::Ping(data))) if writer.send(Message::Pong(data.clone())).await.is_err() => break,
+                    Some(Ok(Message::Ping(_))) => {}
                     Some(Ok(Message::Pong(_))) => { /* ignore */ }
                     Some(Ok(Message::Close(_))) => {
                         info!("router closed connection");
@@ -301,7 +290,9 @@ async fn handle_inbound_text(
     if value.get("type").and_then(|v| v.as_str()) == Some("ping") {
         let pong = serde_json::json!({ "type": "pong" });
         let _ = writer
-            .send(Message::Text(serde_json::to_string(&pong).unwrap_or_default().into()))
+            .send(Message::Text(
+                serde_json::to_string(&pong).unwrap_or_default().into(),
+            ))
             .await;
         return;
     }

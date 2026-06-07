@@ -1,112 +1,124 @@
 # GlassVein Timer Endpoint
 
-`endpoints/timer/` is the Timer endpoint project. It contains the endpoint-local MCP server/API, a GV WebSocket client adapter, and the browser web frontend. The timer project intentionally lives under `GlassVein/endpoints/` rather than `integrations/osg/plugins/` or a standalone static surface directory.
+`endpoints/timer/` is the Rust Timer endpoint. It owns timer MCP tools,
+in-memory one-shot scheduling, and the GV WebSocket adapter that sends
+canonical `control/add_prompt` envelopes when timers fire.
+
+The old Node/JavaScript endpoint and browser UI have been removed. Do not add
+new Timer service code under `src/*.js`, `test/*.js`, `package.json`, or
+`web/`.
 
 ## Boundaries
 
-- Owns timer endpoint behavior, web assets, MCP-compatible JSON-RPC routes, and GV connection adapter code.
-- Does not modify or depend on changes to `core/`, `router/`, `osgp/`, or `clients/rust/`.
-- Uses canonical OSGP-shaped `source` / `target` addresses and `request` / `control` / `response` envelopes.
-- Timer execution is endpoint-local in this first cut. Persistence is in-memory; durable storage can be added inside this endpoint later.
+- Owns timer endpoint behavior, MCP-compatible JSON-RPC routes, timer storage,
+  and GV connection adapter code.
+- Does not modify or depend on changes to `core/`, `router/`, `osgp/`, or
+  `clients/rust/`.
+- Uses OSGP-shaped `source` / `target` addresses and canonical
+  `control/add_prompt` fire delivery.
+- Timer state is endpoint-local and in-memory. Timers are lost when the process
+  exits.
 
 ## Layout
 
-- `src/main.js` — endpoint process entrypoint and configuration.
-- `src/http-server.js` — static web, REST API, and MCP JSON-RPC HTTP routes.
-- `src/mcp-api.js` — timer tool names and MCP call semantics.
-- `src/timer-store.js` — timer state and scheduling.
-- `src/cron.js` — five-field UTC cron parser and next-trigger scan.
-- `src/gv-client.js` — GV WebSocket connection and send boundary.
-- `src/osgp-wire.js` — OSGP envelope helpers.
-- `web/` — browser UI, split into API, state, rendering, and orchestration modules.
+- `src/main.rs` - process entrypoint and scheduler loop.
+- `src/config.rs` - JSON config and CLI config path loading.
+- `src/timer_store.rs` - in-memory timer state and one-shot due draining.
+- `src/mcp_api.rs` and `src/mcp_api/tests.rs` - MCP JSON-RPC tools.
+- `src/gv_client.rs` - GlassVein WebSocket connection and send boundary.
+- `src/osgp_wire.rs` - OSGP envelope helpers.
+- `src/web.rs` - HTTP routes for MCP and status.
+- `demo/` - manual timer/session validation notes.
 
-## Start locally
-
-No install step is required for the current no-dependency Node implementation.
+## Start Locally
 
 ```sh
-cd GlassVein/endpoints/timer
-npm start -- --config ./config.local.json
+cd GlassVein
+cargo run -p timer-endpoint -- --config endpoints/timer/config.example.json
 ```
 
-If `--config` is omitted, safe local defaults are used. Formal runtime configuration is file-driven, not environment-variable driven. Start from `config.example.json` and write a local untracked config file.
+If `--config` is omitted, safe local defaults are used. Runtime configuration is
+file-driven, not environment-variable driven.
 
 Config shape:
 
 ```json
 {
   "listen": { "host": "127.0.0.1", "port": 8789 },
-  "gv": { "routerUrl": "ws://127.0.0.1:7200", "runtimeID": "timer-endpoint" },
-  "webExecutor": { "runtimeID": "timer-web-caller", "sessionID": "timer-web-session" }
+  "gv": {
+    "routerUrl": "ws://127.0.0.1:7200",
+    "domain": "domain-a",
+    "runtimeID": "timer-endpoint",
+    "sessionID": "timer",
+    "sourceRuntime": "timer-endpoint",
+    "sourceSession": "timer"
+  }
 }
 ```
 
-Hot reload:
+## HTTP Endpoints
 
-- HTTP: `POST /api/config/reload`
-- MCP manager tool: `ReloadConfig` with `ExecutorSessionID`
+- `POST /mcp/timer_scheduler?runtimeID=<runtime>` - self-scope MCP endpoint.
+- `POST /mcp/timer_manager` - manager-scope MCP endpoint.
+- `GET /api/status` - health/status summary.
 
-Reload updates GV router URL, runtime/session/source/target defaults, and web executor defaults. Existing timers remain in memory and are not deleted by reload.
+No static browser UI or config reload route is currently exposed by the Rust
+endpoint.
 
-Web entry:
+## MCP Tools
 
-- `http://127.0.0.1:8789/`
-
-MCP-compatible endpoints:
-
-- manager: `POST /mcp/timer_manager`
-- self: `POST /mcp/timer_scheduler?runtimeID=<runtime>`
-
-Web/API endpoint:
-
-- `GET /api/status`
-- `POST /api/timers` with `{ "tool": "ListRuntimeTimers", "arguments": { ... } }`
-
-## Tool mapping
-
-The endpoint keeps the existing timer tool names:
+Self scope:
 
 - `CreateOneShotTimer`
-- `CreatePeriodicTimer`
-- `CreateCronTimer`
 - `DeleteRuntimeTimer`
 - `ListRuntimeTimers`
-- manager `ListAllTimers`
 
-Create/delete operations map to OSGP `control` envelopes; list operations map to OSGP `request` envelopes. Timer fire notifications are sent as `control` envelopes with subtype `timer.fired` when `gv.routerUrl` is configured and connected.
+Manager scope:
 
-## Caller/session audit
+- `CreateOneShotTimer`
+- `DeleteRuntimeTimer`
+- `ListRuntimeTimers`
+- `ListAllTimers`
 
-- Self MCP tools follow the old OSG convention: `runtimeID` comes from the `timer_scheduler?runtimeID=...` query and `ExecutorSessionID` names the caller/current session bucket.
-- Manager MCP tools require `ExecutorSessionID` for caller audit in addition to target `runtimeID`/`sessionID` where applicable.
-- Target `sessionID` is never treated as the caller. Timer rows store `ExecutorSessionID` separately from `SessionID`.
-- Web/API calls inject the endpoint web caller from config `webExecutor.runtimeID` / `webExecutor.sessionID` before invoking manager tools.
+`CreatePeriodicTimer`, `CreateCronTimer`, and `ReloadConfig` are not supported
+in the current Rust endpoint.
 
-## Current limits
+## Executor Injection Contract
 
-- Cron uses a five-field UTC parser compatible with the old timer scheduler. It scans up to five years for the next matching minute.
-- Timers are in-memory and are lost when the endpoint process exits.
-- If no GV router URL is configured, MCP/API/web still work locally, but fire delivery reports a disconnected GV adapter in timer status.
+`ExecutorSessionID` is not chosen by the model, operator prompt, or test
+harness. The MCP host/runtime injects it as the first required argument before
+the Timer endpoint handles the tool call.
 
-## Manual validation
+- Self tools use `ExecutorSessionID` as the owner/target session bucket.
+- Self tools use injected `ExecutorRuntimeID` when present; otherwise they fall
+  back to the `runtimeID` query parameter.
+- Manager tools use injected `ExecutorSessionID` only for caller audit and
+  require explicit target `runtimeID` / `sessionID`.
+- The endpoint validates that `ExecutorSessionID` is present, but it does not
+  mint or infer it from the request body.
 
-Timer/session demo sequence:
+## Fire Delivery
 
-- [`demo/README.md`](demo/README.md) defines the target-session-owned timer demo.
-- In that demo, the target session must create the one-shot timer itself through
-  the Timer MCP surface; external test harness creation is not acceptable.
-- When the timer fires, the Timer endpoint must send canonical
-  `control/add_prompt` to the same target session and prove busy → reply → idle
-  timing with no duplicate one-shot fire.
+When a one-shot timer fires, the endpoint sends one canonical OSGP business
+envelope:
 
-General local checks:
+- `type = "envelope"`
+- `kind = "control.add_prompt"` for router compatibility
+- `linkType = "control"`
+- `subtype = "add_prompt"`
+- `target = timer.RuntimeID / timer.SessionID`
+- `payload.sessionID = timer.SessionID`
+- `payload.msg = timer.MSG`
+- `payload.system = timer metadata prompt`
+
+The endpoint must not send legacy `timer.fired` or dynamic timer subtypes.
+
+## Local Checks
 
 ```sh
 cd GlassVein
-find endpoints/timer -type f -print0 | xargs -0 wc -l
-cd endpoints/timer && npm run check
-cd endpoints/timer && npm test
-cd ../..
-rg 'legacy surface identity pattern' endpoints/timer || true
-find core router osgp clients/rust -type f -mmin -10 -print
+cargo fmt --package timer-endpoint --check
+cargo test -p timer-endpoint
+cargo check --workspace
+find endpoints/timer -type f \( -name '*.js' -o -name 'package.json' -o -path '*/web/*' \) -print
 ```
