@@ -76,7 +76,6 @@ integrations/opencode/plugin/ → @opensessiongateway/opencode-vein-plugin（Typ
 ```text
 demos/    → demo 二进制（alpha/beta/gamma-client + observer/control demo）
 examples/ → OSGP 端点示例（osgp-rust-endpoint、osgp-ts-endpoint）
-legacy/   → 已归档旧 glassvein-* crate（不在主 workspace 中）
 ```
 
 ## 依赖方向
@@ -108,7 +107,7 @@ osgp (osgp/rust)
 - router 只负责跨连接、跨节点转发；同 runtime/session 的业务行为应在 client/surface 侧实现。
 - 本地 npm 发布仅可保留结构或说明；不得在普通脚手架任务中实际发布。
 - 不在本项目任务中执行部署、容器、服务器、Verdaccio 操作。
-- `legacy/` 下的 crate 仅作历史参考，不要在主 workspace 中引用。
+- 旧 `legacy/` 目录已从工作树删除；需要历史参考时使用 git history，不要恢复旧 crate 到主 workspace。
 - 目录迁移由对应 owner worker 负责（core/router → GLM-1，endpoints → GLM-2/3/4），不交叉修改。
 
 ## 代码规范

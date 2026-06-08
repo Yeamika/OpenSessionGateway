@@ -36,4 +36,4 @@ Pingora integration:
 - `core/src/transport/pingora.rs` provides a Pingora ingress adapter (feature-gated behind `pingora-transport`).
 - The adapter uses Pingora `LoadBalancer<RoundRobin>` to select an upstream GlassVein router listener for each incoming HTTP/WebSocket connection.
 - Pingora is the connection/data-plane router; GlassVein remains the application-level route resolver for `domain/runtime/session` addresses.
-- Legacy Pingora stub (`legacy/crates/glassvein-pingora/`) retained for reference only; pingora-core 0.4.0 does not compile on the current toolchain.
+- The old Pingora stub was removed with the legacy crate tree. Use git history for reference if needed; current work should target `core/src/transport/pingora.rs`.

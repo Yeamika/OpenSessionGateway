@@ -4,13 +4,13 @@
 
 **Author:** GLM-7 (legacy & docs cleanup)
 **Date:** 2026-05-16
-**Status:** Phase 1 complete — legacy crates archived to `legacy/`
+**Status:** Legacy crates removed from the active worktree; use git history for reference.
 
 ---
 
 ## 1. Legacy Crate Inventory
 
-### 1.1 Moved to `legacy/crates/` (8 crates, 6967 lines total)
+### 1.1 Removed legacy crate tree (8 crates, 6967 lines total)
 
 These crates were **NOT** registered workspace members. They represent a pre-refactor
 architecture using the `glassvein-*` naming convention and an older protocol layer
@@ -25,10 +25,10 @@ architecture using the `glassvein-*` naming convention and an older protocol lay
 | `glassvein-router` | 1835 | `router` | Depends on glassvein-core, glassvein-protocol |
 | `glassvein-router-cli` | 318 | `router` (main.rs) | Old binary crate |
 | `glassvein-osg-surface` | 794 | (none) | OSG-specific surface, no direct successor |
-| `glassvein-pingora` | 80 | `core/transport/pingora.rs` | Pingora stub; excluded from legacy workspace (pingora-core 0.4.0 incompatible with current toolchain) |
+| `glassvein-pingora` | 80 | `core/transport/pingora.rs` | Pingora stub; removed with the legacy tree (pingora-core 0.4.0 incompatible with the toolchain used at migration time) |
 
-**Legacy workspace** (`legacy/Cargo.toml`) compiles cleanly (warnings only, 0 errors)
-with `glassvein-pingora` excluded.
+The former legacy workspace (`legacy/Cargo.toml`) has been removed. Historical
+snapshots remain available through git history.
 
 ### 1.2 Duplicate Directories (GLM-2 migration in progress)
 
@@ -83,7 +83,7 @@ which is the correct location for control command tests. **No cleanup needed.**
 
 | Doc | Change |
 |---|---|
-| `docs/ARCHITECTURE.md` | Updated Pingora section: `crates/glassvein-pingora/` → `core/src/transport/pingora.rs`, removed reference to non-existent `examples/pingora-surface-demo/`, noted legacy location |
+| `docs/ARCHITECTURE.md` | Updated Pingora section to point at `core/src/transport/pingora.rs`; old Pingora stub is available only through git history |
 
 ### Docs NOT touched (other workers' territory)
 
@@ -98,7 +98,7 @@ which is the correct location for control command tests. **No cleanup needed.**
 
 | Command | Result |
 |---|---|
-| `legacy/ cargo check --workspace` | **PASS** (warnings only, glassvein-pingora excluded) |
+| former `legacy/ cargo check --workspace` | Historical result only; legacy tree has since been removed |
 | `cargo check -p core -p router -p clientlib -p clientroute -p surface -p control-surface -p observer-surface -p requestion-surface -p glassvein-opencode-router` | **PASS** (warnings only) |
 | `cargo test -p router` | **3 FAIL** (envelope_forward tests: Empty channel receives — likely race from GLM-2's in-progress migration, not caused by legacy moves) |
 | `cargo test -p session-links` | **PASS** (7/7) |
@@ -119,5 +119,5 @@ which is the correct location for control command tests. **No cleanup needed.**
 4. **`packages/glassvein-router/` npm package** — still references `glassvein-router-cli` binary.
    Update after router binary name/location is finalized.
 
-5. **`glassvein-pingora` in legacy** — cannot compile due to pingora-core 0.4.0 toolchain issue.
+5. **Removed `glassvein-pingora` stub** — the historical stub did not compile due to the pingora-core 0.4.0 toolchain issue.
    Future Pingora integration should use `core/src/transport/pingora.rs` (feature-gated).

@@ -54,7 +54,8 @@ Rules:
 | `observer-surface` | `surface-viewer` | ✅ done |
 | `requestion-surface` | `requestion-endpoint` | ✅ done |
 
-## Archived
+## Removed Legacy
 
-Pre-refactor crates using the `glassvein-*` naming convention are archived in `legacy/crates/`
-with their own workspace (`legacy/Cargo.toml`). See `docs/OSGP_LEGACY_MIGRATION_NOTES.md`.
+Pre-refactor crates using the `glassvein-*` naming convention were removed from
+the active worktree after migration. Use git history for reference snapshots; do
+not restore them as workspace members. See `docs/OSGP_LEGACY_MIGRATION_NOTES.md`.

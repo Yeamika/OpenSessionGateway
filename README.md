@@ -25,7 +25,6 @@ packages/glassvein-router/          # npm wrapper for Rust router binary
 
 demos/                              # demo binaries (alpha/beta/gamma-client)
 examples/                           # OSGP endpoint examples (Rust + TypeScript)
-legacy/                             # archived pre-refactor glassvein-* crates (not in workspace)
 ```
 
 `endpoints/control/` and `endpoints/viewer/` are retired names; use

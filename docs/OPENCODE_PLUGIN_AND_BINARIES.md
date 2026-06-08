@@ -226,7 +226,6 @@ GlassVein/
 │   ├── alpha-client/
 │   ├── gamma-client/
 │   └── ...
-├── legacy/                       # archived pre-refactor glassvein-* crates
 └── docs/
     └── OPENCODE_PLUGIN_AND_BINARIES.md  # 本文档
 ```
