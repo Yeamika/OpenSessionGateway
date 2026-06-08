@@ -242,6 +242,7 @@ export async function buildVeinRuntimeConfig(): Promise<VeinRuntimeConfig> {
     const stateFilePath = text(internalEnv.stateFilePath) || text(internalConfig.stateFilePath) || path.join(DEFAULT_LOG_DIR, "internal-router-state.json")
     const trustedAnnouncePeers = [...new Set([
       "timer-endpoint",
+      "mailbox-endpoint",
       ...splitCsv(internalConfig.trustedAnnouncePeers || internalConfig.trustedAnnouncePeer),
       ...(internalEnv.trustedAnnouncePeers || []),
     ].map((item) => text(item)).filter(Boolean))]

@@ -5,8 +5,8 @@ use serde_json::{json, Value};
 use tokio::sync::mpsc;
 use uuid::Uuid;
 
-/// Domain used for mailbox endpoint addresses (matches project convention).
-const MAILBOX_DOMAIN: &str = "domain-a";
+/// Default domain used for mailbox endpoint addresses.
+const DEFAULT_MAILBOX_DOMAIN: &str = "domain-a";
 
 /// Arguments for the unified delivery handler.
 #[derive(Clone, Debug)]
@@ -39,6 +39,8 @@ pub struct MailboxToolServices {
     /// Addresses this mailbox endpoint will accept inbound deliveries for.
     /// Used to match inbound `control/add_prompt` envelopes.
     receive_addresses: Vec<SessionAddress>,
+    /// OSGP domain used for outbound mailbox envelopes.
+    domain: String,
 }
 
 impl Default for MailboxToolServices {
@@ -47,6 +49,7 @@ impl Default for MailboxToolServices {
             mailbox: MailboxStore::default(),
             outbound_tx: None,
             receive_addresses: Vec::new(),
+            domain: DEFAULT_MAILBOX_DOMAIN.into(),
         }
     }
 }
@@ -61,10 +64,20 @@ impl MailboxToolServices {
         tx: mpsc::UnboundedSender<LinkMessage>,
         receive_addresses: Vec<SessionAddress>,
     ) -> Self {
+        Self::new_with_router_domain(tx, receive_addresses, DEFAULT_MAILBOX_DOMAIN)
+    }
+
+    /// Create with an outbound channel and explicit OSGP domain.
+    pub fn new_with_router_domain(
+        tx: mpsc::UnboundedSender<LinkMessage>,
+        receive_addresses: Vec<SessionAddress>,
+        domain: impl Into<String>,
+    ) -> Self {
         Self {
             mailbox: MailboxStore::default(),
             outbound_tx: Some(tx),
             receive_addresses,
+            domain: clean_domain(domain),
         }
     }
 
@@ -92,7 +105,7 @@ impl MailboxToolServices {
     async fn handle_send_mailbox_item(&self, args: &Value) -> Value {
         // If we have a router connection, send a deliver envelope to the target mailbox
         if let Some(ref tx) = self.outbound_tx {
-            let deliver_envelope = build_deliver_envelope(args);
+            let deliver_envelope = build_deliver_envelope_with_domain(args, &self.domain);
             if tx.send(deliver_envelope).is_err() {
                 tracing::warn!("failed to send deliver envelope (channel closed)");
                 // Fall back to local store
@@ -144,7 +157,7 @@ impl MailboxToolServices {
 
         // Send reminder to recipient session
         if result.get("ok").and_then(Value::as_bool) == Some(true) {
-            let reminder = build_reminder_from_delivery(&args, &item_id);
+            let reminder = build_reminder_from_delivery_with_domain(&args, &item_id, &self.domain);
             let tx = outbound_tx.or(self.outbound_tx.as_ref());
             if let Some(tx) = tx {
                 if tx.send(reminder).is_err() {
@@ -161,7 +174,7 @@ impl MailboxToolServices {
         let Some(ref tx) = self.outbound_tx else {
             return;
         };
-        let reminder = build_reminder_envelope(args, result);
+        let reminder = build_reminder_envelope_with_domain(args, result, &self.domain);
         if tx.send(reminder).is_err() {
             tracing::warn!("failed to send reminder envelope (channel closed)");
         }
@@ -172,6 +185,11 @@ impl MailboxToolServices {
 
 /// Build a `kind=deliver` envelope to send mail to a remote mailbox endpoint.
 pub(crate) fn build_deliver_envelope(args: &Value) -> LinkMessage {
+    build_deliver_envelope_with_domain(args, DEFAULT_MAILBOX_DOMAIN)
+}
+
+pub(crate) fn build_deliver_envelope_with_domain(args: &Value, domain: &str) -> LinkMessage {
+    let domain = clean_domain(domain);
     let target_runtime = args
         .get("runtimeID")
         .and_then(Value::as_str)
@@ -198,17 +216,17 @@ pub(crate) fn build_deliver_envelope(args: &Value) -> LinkMessage {
         .and_then(Value::as_str)
         .unwrap_or("unknown");
 
-    // Target is the mailbox receive address of the target runtime
-    // Convention: domain-a/<target_runtime>/mailbox
+    // Target is the mailbox receive address of the target runtime.
+    // Convention: <domain>/<target_runtime>/mailbox.
     let envelope = SessionEnvelope {
         id: Uuid::new_v4(),
         source: SessionAddress::new(
-            MAILBOX_DOMAIN,
+            &domain,
             Some(sender_runtime.to_string()),
             Some(sender_session.to_string()),
         ),
         target: SessionAddress::new(
-            MAILBOX_DOMAIN,
+            &domain,
             Some(target_runtime.to_string()),
             Some("mailbox".to_string()), // target's mailbox receive session
         ),
@@ -242,6 +260,14 @@ pub(crate) fn build_deliver_envelope(args: &Value) -> LinkMessage {
 
 /// Build a `kind=reminder` envelope to notify a recipient session about new mail.
 pub(crate) fn build_reminder_envelope(args: &Value, result: &Value) -> LinkMessage {
+    build_reminder_envelope_with_domain(args, result, DEFAULT_MAILBOX_DOMAIN)
+}
+
+pub(crate) fn build_reminder_envelope_with_domain(
+    args: &Value,
+    result: &Value,
+    domain: &str,
+) -> LinkMessage {
     let target_runtime = args
         .get("runtimeID")
         .and_then(Value::as_str)
@@ -267,13 +293,11 @@ pub(crate) fn build_reminder_envelope(args: &Value, result: &Value) -> LinkMessa
         .get("ExecutorSessionID")
         .and_then(Value::as_str)
         .unwrap_or("mailbox-endpoint");
-    let item_id = result
-        .get("itemID")
-        .and_then(Value::as_str)
-        .unwrap_or("");
+    let item_id = result.get("itemID").and_then(Value::as_str).unwrap_or("");
 
     build_reminder_from_delivery_inner(
         item_id,
+        domain,
         target_runtime,
         target_session,
         sender_runtime,
@@ -286,8 +310,17 @@ pub(crate) fn build_reminder_envelope(args: &Value, result: &Value) -> LinkMessa
 
 /// Build a `kind=reminder` envelope from DeliveryArgs (used by unified handler).
 fn build_reminder_from_delivery(args: &DeliveryArgs, item_id: &str) -> LinkMessage {
+    build_reminder_from_delivery_with_domain(args, item_id, DEFAULT_MAILBOX_DOMAIN)
+}
+
+fn build_reminder_from_delivery_with_domain(
+    args: &DeliveryArgs,
+    item_id: &str,
+    domain: &str,
+) -> LinkMessage {
     build_reminder_from_delivery_inner(
         item_id,
+        domain,
         &args.recipient_runtime_id,
         &args.recipient_session_id,
         &args.sender_runtime_id,
@@ -301,6 +334,7 @@ fn build_reminder_from_delivery(args: &DeliveryArgs, item_id: &str) -> LinkMessa
 /// Inner builder for reminder envelopes.
 fn build_reminder_from_delivery_inner(
     item_id: &str,
+    domain: &str,
     target_runtime: &str,
     target_session: &str,
     sender_runtime: &str,
@@ -309,22 +343,27 @@ fn build_reminder_from_delivery_inner(
     content: &str,
     info_type: &str,
 ) -> LinkMessage {
+    let domain = clean_domain(domain);
     let system_prompt = format!(
         "<mailbox>\n<Kind>reminder</Kind>\n<ItemID>{}</ItemID>\n<InfoType>{}</InfoType>\n<Title>{}</Title>\n<SenderRuntimeID>{}</SenderRuntimeID>\n<SenderSessionID>{}</SenderSessionID>\n</mailbox>",
         item_id, info_type, title, sender_runtime, sender_session
     );
 
-    let prompt_msg = format!("[OSG-Mailbox-Reminder] {}: {}", title, truncate(content, 200));
+    let prompt_msg = format!(
+        "[OSG-Mailbox-Reminder] {}: {}",
+        title,
+        truncate(content, 200)
+    );
 
     let envelope = SessionEnvelope {
         id: Uuid::new_v4(),
         source: SessionAddress::new(
-            MAILBOX_DOMAIN,
+            &domain,
             Some("mailbox-endpoint".to_string()),
             Some("mailbox-endpoint".to_string()),
         ),
         target: SessionAddress::new(
-            MAILBOX_DOMAIN,
+            &domain,
             Some(target_runtime.to_string()),
             Some(target_session.to_string()),
         ),
@@ -332,6 +371,9 @@ fn build_reminder_from_delivery_inner(
         link_type: "control".into(),
         subtype: "add_prompt".into(),
         payload: json!({
+            "sessionID": target_session,
+            "msg": prompt_msg,
+            "system": system_prompt,
             "prompt": {
                 "msg": prompt_msg,
                 "system": system_prompt
@@ -428,5 +470,14 @@ fn truncate(s: &str, max_len: usize) -> String {
         s.to_string()
     } else {
         format!("{}...", &s[..max_len])
+    }
+}
+
+fn clean_domain(domain: impl Into<String>) -> String {
+    let clean = domain.into().trim().to_string();
+    if clean.is_empty() {
+        DEFAULT_MAILBOX_DOMAIN.into()
+    } else {
+        clean
     }
 }

@@ -1,4 +1,9 @@
-use crate::{config::ConfigStore, mcp, state::SharedState, tools::{self, MailboxToolServices}};
+use crate::{
+    config::ConfigStore,
+    mcp,
+    state::SharedState,
+    tools::{self, MailboxToolServices},
+};
 use gv_core::{ApprovalKind, GrantRecord, PermissionOp};
 use serde_json::{json, Value};
 use std::{fs, path::PathBuf};
@@ -133,6 +138,15 @@ async fn mcp_lists_and_calls_mailbox_tools() {
     let tools = MailboxToolServices::new();
     let config = ConfigStore::new(None, None);
     config.load_initial(&state).await.expect("config");
+    let init = mcp::handle(
+        &state,
+        &tools,
+        &config,
+        br#"{"jsonrpc":"2.0","id":0,"method":"initialize"}"#,
+    )
+    .await;
+    assert_eq!(init["result"]["protocolVersion"], "2025-03-26");
+    assert_eq!(init["result"]["serverInfo"]["name"], "mailbox-endpoint");
     let list = mcp::handle(
         &state,
         &tools,
@@ -146,7 +160,9 @@ async fn mcp_lists_and_calls_mailbox_tools() {
         .iter()
         .any(|tool| tool["name"] == "ListMailboxItems"));
     let send = mcp::handle(&state, &tools, &config, br#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"SendMailboxItem","arguments":{"ExecutorSessionID":"sender","runtimeID":"rt","sessionID":"target","title":"mcp","msg":"body"}}}"#).await;
-    assert_eq!(send["result"]["ok"], true);
+    let text = send["result"]["content"][0]["text"].as_str().unwrap();
+    let body: Value = serde_json::from_str(text).unwrap();
+    assert_eq!(body["ok"], true);
 }
 
 #[tokio::test]
@@ -278,10 +294,7 @@ fn permission_op_read_runtime_session_messages() {
 
 #[test]
 fn permission_op_admin_routes_read() {
-    assert_eq!(
-        PermissionOp::AdminRoutesRead.as_str(),
-        "admin.routes.read"
-    );
+    assert_eq!(PermissionOp::AdminRoutesRead.as_str(), "admin.routes.read");
     assert_eq!(
         PermissionOp::from_str("admin.routes.read"),
         Some(PermissionOp::AdminRoutesRead)
@@ -324,10 +337,8 @@ fn state_file_with_mailbox_grant_roundtrip() {
     // serde uses snake_case for enum variants
     assert!(json.contains("announce_route") || json.contains("announce.route"));
 
-    let de: GrantRecord = serde_json::from_str(
-        &serde_json::to_string(&state.persistent_grants[0]).unwrap(),
-    )
-    .unwrap();
+    let de: GrantRecord =
+        serde_json::from_str(&serde_json::to_string(&state.persistent_grants[0]).unwrap()).unwrap();
     assert_eq!(de.peer_id, "mailbox-endpoint");
     assert_eq!(de.op, PermissionOp::AnnounceRoute);
     assert_eq!(de.kind, ApprovalKind::Persist);
@@ -399,16 +410,17 @@ async fn send_mailbox_item_with_router_sends_deliver_envelope() {
             assert_eq!(env.target.session.as_deref(), Some("mailbox"));
 
             // Payload must have kind=deliver
+            assert_eq!(env.payload["mailbox"]["kind"].as_str().unwrap(), "deliver");
             assert_eq!(
-                env.payload["mailbox"]["kind"].as_str().unwrap(),
-                "deliver"
-            );
-            assert_eq!(
-                env.payload["mailbox"]["recipientRuntimeID"].as_str().unwrap(),
+                env.payload["mailbox"]["recipientRuntimeID"]
+                    .as_str()
+                    .unwrap(),
                 "target-rt"
             );
             assert_eq!(
-                env.payload["mailbox"]["recipientSessionID"].as_str().unwrap(),
+                env.payload["mailbox"]["recipientSessionID"]
+                    .as_str()
+                    .unwrap(),
                 "target-ses"
             );
             assert_eq!(env.ttl, 32);
@@ -418,6 +430,38 @@ async fn send_mailbox_item_with_router_sends_deliver_envelope() {
 
     // No more envelopes
     assert!(rx.try_recv().is_err(), "should have exactly one envelope");
+}
+
+#[tokio::test]
+async fn send_mailbox_item_with_router_uses_configured_domain() {
+    use osgp::LinkMessage;
+    use tokio::sync::mpsc;
+
+    let (tx, mut rx) = mpsc::unbounded_channel::<LinkMessage>();
+    let tools = MailboxToolServices::new_with_router_domain(tx, vec![], "opencode");
+
+    let result = call(
+        &tools,
+        "SendMailboxItem",
+        json!({
+            "ExecutorRuntimeID": "rt-a", "ExecutorSessionID": "ses-a",
+            "runtimeID": "rt-b", "sessionID": "ses-b",
+            "title": "domain", "msg": "body", "type": "Notice"
+        }),
+    )
+    .await;
+
+    assert_eq!(result["ok"], true);
+    let envelope_msg = rx.try_recv().expect("expected deliver envelope");
+    match envelope_msg {
+        LinkMessage::Envelope(env) => {
+            assert_eq!(env.source.domain, "opencode");
+            assert_eq!(env.target.domain, "opencode");
+            assert_eq!(env.target.runtime.as_deref(), Some("rt-b"));
+            assert_eq!(env.target.session.as_deref(), Some("mailbox"));
+        }
+        other => panic!("expected Envelope, got {:?}", other),
+    }
 }
 
 #[tokio::test]
@@ -450,6 +494,15 @@ async fn deliver_handler_stores_and_sends_reminder() {
             assert_eq!(env.subtype, "add_prompt");
             // Reminder has kind=reminder
             assert_eq!(env.payload["mailbox"]["kind"].as_str().unwrap(), "reminder");
+            assert_eq!(env.payload["sessionID"].as_str().unwrap(), "recipient-ses");
+            assert!(env.payload["msg"]
+                .as_str()
+                .unwrap()
+                .contains("[OSG-Mailbox-Reminder]"));
+            assert!(env.payload["system"]
+                .as_str()
+                .unwrap()
+                .contains("<mailbox>"));
             assert_eq!(env.payload["mailbox"]["itemID"].as_str().unwrap(), item_id);
             // Target is the recipient session
             assert_eq!(env.target.runtime.as_deref(), Some("recipient-rt"));
@@ -565,15 +618,21 @@ async fn inbound_delivery_matching_uses_receive_addresses() {
     use osgp::{SessionAddress, SessionEnvelope};
     use uuid::Uuid;
 
-    let receive_addrs = vec![
-        SessionAddress::new("domain-a", Some("mailbox-endpoint".into()), Some("mailbox".into())),
-    ];
+    let receive_addrs = vec![SessionAddress::new(
+        "domain-a",
+        Some("mailbox-endpoint".into()),
+        Some("mailbox".into()),
+    )];
 
     // Should match
     let env = SessionEnvelope {
         id: Uuid::new_v4(),
         source: SessionAddress::new("domain-a", Some("sender".into()), Some("s1".into())),
-        target: SessionAddress::new("domain-a", Some("mailbox-endpoint".into()), Some("mailbox".into())),
+        target: SessionAddress::new(
+            "domain-a",
+            Some("mailbox-endpoint".into()),
+            Some("mailbox".into()),
+        ),
         kind: "control.add_prompt".into(),
         link_type: "control".into(),
         subtype: "add_prompt".into(),

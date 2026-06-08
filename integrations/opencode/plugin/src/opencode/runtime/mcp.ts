@@ -135,7 +135,7 @@ function normalizeSurfaceDescriptors(values: OsgMcpSurfaceDescriptor[]): OsgMcpS
   return [...map.values()].sort((a, b) => a.routeSegment.localeCompare(b.routeSegment))
 }
 
-function normalizeTimerMcpUrl(value: unknown): string {
+function normalizeExternalMcpUrl(value: unknown, defaultPath: string, mcpChildPath = ""): string {
   const raw = text(value)
   if (!raw) return ""
   try {
@@ -143,9 +143,9 @@ function normalizeTimerMcpUrl(value: unknown): string {
     if (url.protocol !== "http:" && url.protocol !== "https:") return ""
     const pathname = trimRightSlash(url.pathname)
     if (!pathname || pathname === "/") {
-      url.pathname = "/mcp/timer_scheduler"
-    } else if (pathname.endsWith("/mcp")) {
-      url.pathname = `${pathname}/timer_scheduler`
+      url.pathname = defaultPath
+    } else if (mcpChildPath && pathname.endsWith("/mcp")) {
+      url.pathname = `${pathname}/${mcpChildPath}`
     }
     return url.toString()
   } catch {
@@ -154,18 +154,34 @@ function normalizeTimerMcpUrl(value: unknown): string {
 }
 
 function readExternalMcpSurfaceDescriptors(): OsgMcpSurfaceDescriptor[] {
+  const surfaces: OsgMcpSurfaceDescriptor[] = []
   const timerEnabled = bool(process.env.VEIN_TIMER_MCP_ENABLED || process.env.GV_TIMER_MCP_ENABLED || process.env.OSG_TIMER_MCP_ENABLED)
-  if (timerEnabled === false) return []
+  const timerUrl = timerEnabled === false
+    ? ""
+    : normalizeExternalMcpUrl(process.env.VEIN_TIMER_MCP_URL || process.env.GV_TIMER_MCP_URL || process.env.OSG_TIMER_MCP_URL, "/mcp/timer_scheduler", "timer_scheduler")
+  if (timerUrl) {
+    surfaces.push({
+      routeSegment: text(process.env.VEIN_TIMER_MCP_NAME || process.env.GV_TIMER_MCP_NAME || process.env.OSG_TIMER_MCP_NAME) || "timer_scheduler",
+      sourceID: text(process.env.VEIN_TIMER_MCP_SOURCE_ID || process.env.GV_TIMER_MCP_SOURCE_ID || process.env.OSG_TIMER_MCP_SOURCE_ID) || "timer-endpoint",
+      url: timerUrl,
+      autoEnable: true,
+    })
+  }
 
-  const timerUrl = normalizeTimerMcpUrl(process.env.VEIN_TIMER_MCP_URL || process.env.GV_TIMER_MCP_URL || process.env.OSG_TIMER_MCP_URL)
-  if (!timerUrl) return []
+  const mailboxEnabled = bool(process.env.VEIN_MAILBOX_MCP_ENABLED || process.env.GV_MAILBOX_MCP_ENABLED || process.env.OSG_MAILBOX_MCP_ENABLED)
+  const mailboxUrl = mailboxEnabled === false
+    ? ""
+    : normalizeExternalMcpUrl(process.env.VEIN_MAILBOX_MCP_URL || process.env.GV_MAILBOX_MCP_URL || process.env.OSG_MAILBOX_MCP_URL, "/api/v2/mcp/mailbox")
+  if (mailboxUrl) {
+    surfaces.push({
+      routeSegment: text(process.env.VEIN_MAILBOX_MCP_NAME || process.env.GV_MAILBOX_MCP_NAME || process.env.OSG_MAILBOX_MCP_NAME) || "mailbox",
+      sourceID: text(process.env.VEIN_MAILBOX_MCP_SOURCE_ID || process.env.GV_MAILBOX_MCP_SOURCE_ID || process.env.OSG_MAILBOX_MCP_SOURCE_ID) || "mailbox-endpoint",
+      url: mailboxUrl,
+      autoEnable: true,
+    })
+  }
 
-  return [{
-    routeSegment: text(process.env.VEIN_TIMER_MCP_NAME || process.env.GV_TIMER_MCP_NAME || process.env.OSG_TIMER_MCP_NAME) || "timer_scheduler",
-    sourceID: text(process.env.VEIN_TIMER_MCP_SOURCE_ID || process.env.GV_TIMER_MCP_SOURCE_ID || process.env.OSG_TIMER_MCP_SOURCE_ID) || "timer-endpoint",
-    url: timerUrl,
-    autoEnable: true,
-  }]
+  return surfaces
 }
 
 async function discoverSurfaceDescriptors(input: { wsServerUrl?: string; baseUrl?: string }): Promise<OsgMcpSurfaceDescriptor[]> {

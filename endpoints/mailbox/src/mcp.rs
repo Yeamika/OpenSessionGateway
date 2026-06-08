@@ -38,9 +38,16 @@ async fn handle_result(
 ) -> Result<(Value, Value)> {
     let request: RpcRequest = serde_json::from_slice(body)?;
     let result = match request.method.as_str() {
-        "initialize" => json!({ "name": "mailbox-endpoint", "version": env!("CARGO_PKG_VERSION") }),
+        "initialize" => json!({
+            "protocolVersion": "2025-03-26",
+            "serverInfo": {
+                "name": "mailbox-endpoint",
+                "version": env!("CARGO_PKG_VERSION")
+            },
+            "capabilities": { "tools": { "listChanged": false } }
+        }),
         "tools/list" => list_tools(),
-        "tools/call" => call_tool(state, tools, config, request.params).await?,
+        "tools/call" => mcp_text_result(call_tool(state, tools, config, request.params).await?),
         other => bail!("unknown MCP method '{other}'"),
     };
     Ok((request.id, result))
@@ -80,4 +87,13 @@ fn list_tools() -> Value {
 
 fn empty_schema() -> Value {
     json!({ "type": "object", "properties": {}, "additionalProperties": false })
+}
+
+fn mcp_text_result(data: Value) -> Value {
+    json!({
+        "content": [{
+            "type": "text",
+            "text": serde_json::to_string_pretty(&data).unwrap_or_default()
+        }]
+    })
 }

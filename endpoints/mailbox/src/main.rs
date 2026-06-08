@@ -14,9 +14,6 @@ use anyhow::Result;
 use osgp::{LinkMessage, SessionAddress};
 use state::SharedState;
 
-/// Domain used for mailbox endpoint addresses.
-const MAILBOX_DOMAIN: &str = "domain-a";
-
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt()
@@ -36,6 +33,10 @@ async fn main() -> Result<()> {
         .iter()
         .filter_map(|s| parse_session_address(s))
         .collect();
+    let mailbox_domain = receive_addresses
+        .first()
+        .map(|addr| addr.domain.clone())
+        .unwrap_or_else(|| "domain-a".into());
 
     // Connect to router if --router-url is provided.
     // The handle MUST be kept alive for the duration of the process;
@@ -56,9 +57,10 @@ async fn main() -> Result<()> {
         );
 
         // Create tools with outbound channel and receive addresses
-        let tools = tools::MailboxToolServices::new_with_router(
+        let tools = tools::MailboxToolServices::new_with_router_domain(
             handle.tx.clone(),
             receive_addresses.clone(),
+            mailbox_domain.clone(),
         );
 
         // Inbound envelope interception: handle delivery envelopes
@@ -104,7 +106,10 @@ async fn main() -> Result<()> {
                 }
                 // Not a delivery envelope — log as before
                 state_clone
-                    .log("router_message", serde_json::to_value(&msg).unwrap_or_default())
+                    .log(
+                        "router_message",
+                        serde_json::to_value(&msg).unwrap_or_default(),
+                    )
                     .await;
             }
         });
@@ -141,7 +146,11 @@ async fn main() -> Result<()> {
 fn parse_session_address(s: &str) -> Option<SessionAddress> {
     let parts: Vec<&str> = s.split('/').collect();
     match parts.len() {
-        1 => Some(SessionAddress::new(parts[0], None::<String>, None::<String>)),
+        1 => Some(SessionAddress::new(
+            parts[0],
+            None::<String>,
+            None::<String>,
+        )),
         2 => Some(SessionAddress::new(
             parts[0],
             Some(parts[1].to_string()),

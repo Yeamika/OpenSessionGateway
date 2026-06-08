@@ -43,7 +43,8 @@ async fn handle(
     let (head, body) = split_request(request, &buffer[..read])?;
     let mut parts = head.lines().next().unwrap_or_default().split_whitespace();
     let method = parts.next().unwrap_or_default();
-    let path = parts.next().unwrap_or("/");
+    let raw_path = parts.next().unwrap_or("/");
+    let path = raw_path.split('?').next().unwrap_or(raw_path);
     let response = route(method, path, body, &state, &tools, &config).await;
     let (status, content_type, payload) = match response {
         Ok(value) => value,

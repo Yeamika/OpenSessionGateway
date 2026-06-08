@@ -53,7 +53,7 @@ Environment variables:
 | `GV_UPSTREAM_ROUTER_URL=ws://127.0.0.1:4090` | Upstream router for the built-in router. Aliases: `VEIN_UPSTREAM_ROUTER_URL`, `OSG_UPSTREAM_ROUTER_URL`. |
 | `GV_UPSTREAM_ROUTER_URLS=ws://a,ws://b` | Comma-separated upstream routers. Aliases: `VEIN_UPSTREAM_ROUTER_URLS`, `OSG_UPSTREAM_ROUTER_URLS`. |
 | `GV_ROUTER_STATE_FILE=~/.config/opencode-vein-plugin/logs/internal-router-state.json` | Built-in router state file. Aliases: `VEIN_ROUTER_STATE_FILE`, `OSG_ROUTER_STATE_FILE`. |
-| `GV_ROUTER_TRUSTED_ANNOUNCE_PEERS=timer-endpoint` | Extra peers allowed to announce routes. The opencode runtime peer is added automatically. Aliases: `VEIN_ROUTER_TRUSTED_ANNOUNCE_PEERS`, `OSG_ROUTER_TRUSTED_ANNOUNCE_PEERS`. |
+| `GV_ROUTER_TRUSTED_ANNOUNCE_PEERS=timer-endpoint,mailbox-endpoint` | Extra peers allowed to announce routes. The opencode runtime peer is added automatically. Aliases: `VEIN_ROUTER_TRUSTED_ANNOUNCE_PEERS`, `OSG_ROUTER_TRUSTED_ANNOUNCE_PEERS`. |
 | `GV_ROUTER_URL=ws://127.0.0.1:4090` | Explicit external router URL; disables the built-in router by default unless `GV_INTERNAL_ROUTER=true`. Aliases: `VEIN_ROUTER_URL`, `OSG_WS_URL`. |
 
 External endpoints, including the Rust Timer endpoint, should connect to this
@@ -70,7 +70,7 @@ Config file (`~/.config/opencode-vein-plugin-config.json`) supports the same ser
     "bindHost": "127.0.0.1",
     "upstreamUrls": ["ws://127.0.0.1:4090"],
     "stateFilePath": "~/.config/opencode-vein-plugin/logs/internal-router-state.json",
-    "trustedAnnouncePeers": ["timer-endpoint"]
+    "trustedAnnouncePeers": ["timer-endpoint", "mailbox-endpoint"]
   }
 }
 ```
@@ -98,6 +98,24 @@ Timer MCP environment variables:
 | `GV_TIMER_MCP_ENABLED=false` | Disable the managed Timer MCP entry. Aliases: `VEIN_TIMER_MCP_ENABLED`, `OSG_TIMER_MCP_ENABLED`. |
 | `GV_TIMER_MCP_NAME=timer_scheduler` | MCP config name. Aliases: `VEIN_TIMER_MCP_NAME`, `OSG_TIMER_MCP_NAME`. |
 | `GV_TIMER_MCP_SOURCE_ID=timer-endpoint` | Source metadata for status/display. Aliases: `VEIN_TIMER_MCP_SOURCE_ID`, `OSG_TIMER_MCP_SOURCE_ID`. |
+
+### Mailbox MCP
+
+The Mailbox endpoint exposes HTTP/MCP at `/api/v2/mcp/mailbox`. Point the
+plugin at it to let opencode sessions use mailbox tools:
+
+```bash
+GV_MAILBOX_MCP_URL=http://127.0.0.1:7311 opencode run "send mail to another session"
+```
+
+If the value is only a host URL, the plugin appends `/api/v2/mcp/mailbox`.
+
+| Variable | Description |
+|---|---|
+| `GV_MAILBOX_MCP_URL=http://127.0.0.1:7311` | Mailbox MCP server URL. Aliases: `VEIN_MAILBOX_MCP_URL`, `OSG_MAILBOX_MCP_URL`. |
+| `GV_MAILBOX_MCP_ENABLED=false` | Disable the managed Mailbox MCP entry. Aliases: `VEIN_MAILBOX_MCP_ENABLED`, `OSG_MAILBOX_MCP_ENABLED`. |
+| `GV_MAILBOX_MCP_NAME=mailbox` | MCP config name. Aliases: `VEIN_MAILBOX_MCP_NAME`, `OSG_MAILBOX_MCP_NAME`. |
+| `GV_MAILBOX_MCP_SOURCE_ID=mailbox-endpoint` | Source metadata for status/display. Aliases: `VEIN_MAILBOX_MCP_SOURCE_ID`, `OSG_MAILBOX_MCP_SOURCE_ID`. |
 
 ### Direct WS client usage
 

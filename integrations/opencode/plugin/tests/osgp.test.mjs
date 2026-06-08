@@ -74,7 +74,7 @@ function internalRouterConfig(patch = {}) {
     binaryPath: "",
     startupTimeoutMs: 5000,
     stateFilePath: "/tmp/gv-router-state.json",
-    trustedAnnouncePeers: ["workspace-a", "timer-endpoint"],
+    trustedAnnouncePeers: ["workspace-a", "timer-endpoint", "mailbox-endpoint"],
     ...patch,
   }
 }
@@ -188,6 +188,7 @@ test("internal router state file grants trusted announce peers", (t) => {
   assert.deepEqual(
     state.persistent_grants.sort((a, b) => a.peer_id.localeCompare(b.peer_id)),
     [
+      { peer_id: "mailbox-endpoint", op: "announce_route", kind: "persist" },
       { peer_id: "timer-endpoint", op: "announce_route", kind: "persist" },
       { peer_id: "workspace-a", op: "announce_route", kind: "persist" },
     ],
@@ -212,6 +213,9 @@ test("timer MCP env entry is managed and receives runtime query", async () => {
     GV_TIMER_MCP_URL: "http://127.0.0.1:8789",
     VEIN_TIMER_MCP_URL: undefined,
     OSG_TIMER_MCP_URL: undefined,
+    GV_MAILBOX_MCP_URL: undefined,
+    VEIN_MAILBOX_MCP_URL: undefined,
+    OSG_MAILBOX_MCP_URL: undefined,
     GV_TIMER_MCP_ENABLED: undefined,
     VEIN_TIMER_MCP_ENABLED: undefined,
     OSG_TIMER_MCP_ENABLED: undefined,
@@ -246,11 +250,53 @@ test("timer MCP env entry is managed and receives runtime query", async () => {
   })
 })
 
+test("mailbox MCP env entry is managed and receives runtime query", async () => {
+  await withEnv({
+    GV_MAILBOX_MCP_URL: "http://127.0.0.1:7311",
+    VEIN_MAILBOX_MCP_URL: undefined,
+    OSG_MAILBOX_MCP_URL: undefined,
+    GV_TIMER_MCP_URL: undefined,
+    VEIN_TIMER_MCP_URL: undefined,
+    OSG_TIMER_MCP_URL: undefined,
+    GV_MAILBOX_MCP_ENABLED: undefined,
+    VEIN_MAILBOX_MCP_ENABLED: undefined,
+    OSG_MAILBOX_MCP_ENABLED: undefined,
+  }, async () => {
+    const cfg = {}
+    const result = await applyOsgMcpConfig(
+      cfg,
+      async () => {},
+      () => "gv-runtime",
+      () => "/tmp/gv-workspace",
+      () => "ws://127.0.0.1:7240",
+    )
+
+    assert.deepEqual(result.names, ["mailbox"])
+    assert.equal(cfg.mcp.mailbox.type, "remote")
+    assert.equal(cfg.mcp.mailbox.enabled, true)
+    assert.equal(cfg.mcp.mailbox.oauth, false)
+
+    const url = new URL(cfg.mcp.mailbox.url)
+    assert.equal(url.origin, "http://127.0.0.1:7311")
+    assert.equal(url.pathname, "/api/v2/mcp/mailbox")
+    assert.equal(url.searchParams.get("runtimeID"), "gv-runtime")
+    assert.equal(url.searchParams.get("instanceWorkspaceDirectory"), "/tmp/gv-workspace")
+    assert.deepEqual(result.metadata, [{
+      name: "mailbox",
+      sourceID: "mailbox-endpoint",
+      metadata: { sourceID: "mailbox-endpoint" },
+    }])
+  })
+})
+
 test("timer MCP env entry honors explicit disabled config", async () => {
   await withEnv({
     GV_TIMER_MCP_URL: "http://127.0.0.1:8789/mcp/timer_scheduler",
     VEIN_TIMER_MCP_URL: undefined,
     OSG_TIMER_MCP_URL: undefined,
+    GV_MAILBOX_MCP_URL: undefined,
+    VEIN_MAILBOX_MCP_URL: undefined,
+    OSG_MAILBOX_MCP_URL: undefined,
   }, async () => {
     const cfg = { mcp: { timer_scheduler: { enabled: false } } }
     const result = await applyOsgMcpConfig(
