@@ -87,6 +87,8 @@ The plugin stores GV ownership binding inside Codex's SQLite state database, but
 
 For MCP tool calls, the reliable path is the `PreToolUse` hook. Codex command hooks expose `session_id`, `turn_id`, `tool_use_id`, and, for subagents, `agent_id`. The GV `PreToolUse` hook attaches those values to GV MCP arguments as `__gvCodexContext`; the hub removes that private field before forwarding to the backend and uses it to inject fields such as `ExecutorSessionID`, `ExecutorThreadID`, `ExecutorTurnID`, and `ExecutorToolUseID`. The hook only updates MCP tools whose Codex MCP server config points at `gv-mcp-hub.mjs`, so unrelated MCP servers are left unchanged.
 
+Multiple Codex threads can share one GV hub process. Ownership is carried per tool call, so thread A and thread B remain isolated even when they call the same backend MCP server. Subagent calls use `agent_id` as `ExecutorThreadID` and keep the root Codex session in `ExecutorRootSessionID`.
+
 The hub does not infer the current caller by scanning Codex's `threads` table, by reading GV binding rows, or by using session environment variables. Without direct hook context, MCP ownership is treated as missing. The plugin does not update Codex-owned tables such as `threads`, `thread_dynamic_tools`, or `thread_goals`.
 
 The database path is resolved from `sqlite_home` in Codex config, then `CODEX_SQLITE_HOME`, then `CODEX_HOME`, and finally `~/.codex`. The latest `state_*.sqlite` file is used. Set `GV_CODEX_STATE_DB` to force an exact database path for tests or local debugging.
