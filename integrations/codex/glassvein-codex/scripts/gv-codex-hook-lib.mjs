@@ -53,7 +53,6 @@ export async function handlePreToolUse() {
   if (!toolInput || !await shouldAttachPreToolContext(input)) {
     writeJson({
       continue: true,
-      suppressOutput: true,
       hookSpecificOutput: {
         hookEventName: "PreToolUse",
         permissionDecision: "allow",
@@ -80,7 +79,6 @@ export async function handlePreToolUse() {
 
   writeJson({
     continue: true,
-    suppressOutput: true,
     hookSpecificOutput: {
       hookEventName: "PreToolUse",
       permissionDecision: "allow",

@@ -161,6 +161,7 @@ test("PreToolUse injects direct GV Codex context into MCP arguments", () => {
     assert.equal(result.status, 0, result.stderr)
     const output = JSON.parse(result.stdout)
     assert.equal(output.continue, true)
+    assert.equal(output.suppressOutput, undefined)
     assert.equal(output.hookSpecificOutput.hookEventName, "PreToolUse")
     assert.equal(output.hookSpecificOutput.permissionDecision, "allow")
     assert.deepEqual(output.hookSpecificOutput.updatedInput, {
@@ -208,7 +209,6 @@ test("PreToolUse leaves non-GV MCP arguments unchanged", () => {
     assert.equal(result.status, 0, result.stderr)
     assert.deepEqual(JSON.parse(result.stdout), {
       continue: true,
-      suppressOutput: true,
       hookSpecificOutput: {
         hookEventName: "PreToolUse",
         permissionDecision: "allow",
@@ -242,6 +242,7 @@ test("PreToolUse recognizes slash-style GV MCP tool names", () => {
 
     assert.equal(result.status, 0, result.stderr)
     const output = JSON.parse(result.stdout)
+    assert.equal(output.suppressOutput, undefined)
     assert.equal(output.hookSpecificOutput.updatedInput.__gvCodexContext.threadID, "thread-session")
     assert.equal(output.hookSpecificOutput.updatedInput.__gvCodexContext.toolUseID, "tool-use-3")
   } finally {
@@ -292,6 +293,7 @@ test("PreToolUse discovers configured GV MCP servers from Codex config", async (
 
     assert.equal(result.status, 0, result.stderr)
     const output = JSON.parse(result.stdout)
+    assert.equal(output.suppressOutput, undefined)
     assert.equal(output.hookSpecificOutput.updatedInput.__gvCodexContext.threadID, "thread-session")
     assert.equal(output.hookSpecificOutput.updatedInput.__gvCodexContext.toolUseID, "tool-use-4")
   } finally {
