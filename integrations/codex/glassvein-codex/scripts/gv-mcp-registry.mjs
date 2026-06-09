@@ -6,6 +6,11 @@ export async function loadRegistry() {
   return selectRegistry(normalizeRegistry(configured))
 }
 
+export async function loadFullRegistry() {
+  const configured = await readConfiguredRegistry()
+  return normalizeRegistry(configured)
+}
+
 async function readConfiguredRegistry() {
   const files = registryFiles()
   for (const file of files) {

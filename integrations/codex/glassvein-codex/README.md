@@ -9,6 +9,7 @@ Codex-side GlassVein bridge. It lives beside the opencode integration and provid
 - Optionally publishes `session_update` upload envelopes to a local GlassVein router.
 - Provides a reusable MCP hub script that can back separate Codex MCP servers such as `refs` and `timer` while injecting Codex session ownership fields.
 - Can receive GV `control/add_prompt` envelopes from the router and start a Codex app-server turn on an existing, resumed, forked, or newly created app-server conversation thread.
+- Registers GV MCP backends as app-server dynamic tools for GV-started threads, so refs/timer calls can be routed through GV with thread ownership attached by the app-server client.
 - Adds a `glassvein` skill with the stable repo rules for GV work.
 
 ## Layout
@@ -53,6 +54,8 @@ Environment variables:
 - `GV_MCP_SERVER_NAME=<server-name>` filters the shared MCP registry to one backend, so Codex can show separate MCP servers such as `refs` and `timer` while both use the same hub script.
 - `GV_CODEX_APP_SERVER_URL=ws://127.0.0.1:4510` enables GV `control/add_prompt` delivery as Codex app-server `turn/start` on an existing thread.
 - `GV_CODEX_APP_THREAD_MODE=existing|auto|start|resume|fork` selects how GV delivery binds to Codex app-server threads. The default is `existing`, which does not create threads.
+- `GV_CODEX_APP_DYNAMIC_TOOLS=0` disables exposing GV MCP registry entries as app-server dynamic tools.
+- `GV_CODEX_DYNAMIC_MCP_SERVERS=refs,timer` limits which registry entries are exposed as app-server dynamic tools. Omit it to expose all GV registry entries.
 - `GV_CODEX_THREAD_MAP_FILE=/path/to/app-server-threads.json` points to a JSON map from Codex `sessionID` to existing app-server `threadId`.
 - `GV_CODEX_RECEIVE_ROUTER=0` disables the adapter's GV router receive loop.
 
@@ -167,5 +170,7 @@ codex app-server --listen ws://127.0.0.1:4510
 ```
 
 By default, delivery does not create a new app-server thread: missing or stale session-to-thread binding is treated as an error. To use real independent Codex conversation threads, set `GV_CODEX_APP_THREAD_MODE=auto` so each GV session starts its own `thread/start` thread and later resumes the mapped thread before `turn/start`. A GV `control/add_prompt` payload can also override this per message with `threadMode: "start"`, `"resume"`, or `"fork"` plus `threadId` or `sourceThreadId` when needed.
+
+For GV-started app-server threads, the bridge registers each GV registry entry as Codex dynamic tools using `namespace=<server name>` and `name=<tool name>`, for example `refs.rg`. Dynamic tool calls return to the GV app-server client as `item/tool/call`; the client uses the app-server `threadId`, `turnId`, and `callId` to inject `ExecutorSessionID`, `ExecutorThreadID`, `ExecutorTurnID`, and `ExecutorToolUseID` before forwarding to the backend MCP server. This avoids relying on hidden model-visible MCP arguments, environment variables, or Codex database guessing.
 
 The GV router must grant `announce.route` to both the Timer endpoint peer and the Codex adapter peer, otherwise the router will reject route announcements and Timer delivery will be dropped.

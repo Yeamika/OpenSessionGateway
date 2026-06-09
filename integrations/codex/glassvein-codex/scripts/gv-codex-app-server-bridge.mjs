@@ -1,5 +1,7 @@
 import { promises as fs } from "node:fs"
 
+import { dynamicToolsForAppServer, handleDynamicToolCall } from "./gv-codex-dynamic-tools.mjs"
+
 const DEFAULT_ROUTER_URL = "ws://127.0.0.1:7200"
 const DEFAULT_RUNTIME_ID = "codex"
 const DEFAULT_DOMAIN = "domain-a"
@@ -104,7 +106,7 @@ async function handleGvMessage(raw, caller) {
 }
 
 export async function startCodexTurn(caller, prompt, payload = {}) {
-  const client = await createWebSocketAppServerClient(appServerUrl())
+  const client = await createWebSocketAppServerClient(appServerUrl(), { caller })
   try {
     await client.request("initialize", {
       clientInfo: {
@@ -116,11 +118,12 @@ export async function startCodexTurn(caller, prompt, payload = {}) {
     })
     client.notify("initialized", {})
     const threadId = await resolveAppServerThreadId(client, caller, payload)
-    await client.request("turn/start", {
+    const turn = await client.request("turn/start", {
       threadId,
       cwd: appServerCwd(caller, payload) || process.cwd(),
       input: [{ type: "text", text: prompt }],
     })
+    await client.waitForTurnCompletion(turn?.turn?.id)
   } finally {
     client.close()
   }
@@ -144,7 +147,10 @@ export async function resolveAppServerThreadId(client, caller, payload = {}) {
 }
 
 async function startAppThread(client, caller, payload) {
-  const result = await client.request("thread/start", threadParams(caller, payload, { ephemeral: true }))
+  const result = await client.request("thread/start", await threadParams(caller, payload, {
+    dynamicTools: true,
+    ephemeral: true,
+  }))
   const threadId = responseThreadId(result, "thread/start")
   await writeMappedThreadId(caller.sessionID, threadId)
   return threadId
@@ -155,7 +161,7 @@ async function resumeAppThread(client, caller, payload, threadId) {
   if (!target) throw new Error(`No Codex app-server thread binding for session ${caller.sessionID}`)
   const result = await client.request("thread/resume", {
     threadId: target,
-    ...threadParams(caller, payload),
+    ...await threadParams(caller, payload),
   })
   const resolved = responseThreadId(result, "thread/resume") || target
   await writeMappedThreadId(caller.sessionID, resolved)
@@ -167,7 +173,7 @@ async function forkAppThread(client, caller, payload, threadId) {
   if (!source) throw new Error(`No Codex app-server thread binding to fork for session ${caller.sessionID}`)
   const result = await client.request("thread/fork", {
     threadId: source,
-    ...threadParams(caller, payload, { ephemeral: true }),
+    ...await threadParams(caller, payload, { ephemeral: true }),
   })
   const forked = responseThreadId(result, "thread/fork")
   await writeMappedThreadId(caller.sessionID, forked)
@@ -187,7 +193,7 @@ function appThreadMode(payload) {
   return APP_THREAD_MODES.has(requested) ? requested : "existing"
 }
 
-function threadParams(caller, payload, options = {}) {
+async function threadParams(caller, payload, options = {}) {
   const params = {
     cwd: appServerCwd(caller, payload),
     model: text(payload.codexModel || payload.model),
@@ -195,6 +201,7 @@ function threadParams(caller, payload, options = {}) {
     baseInstructions: text(payload.baseInstructions || payload.base_instructions),
     developerInstructions: text(payload.developerInstructions || payload.developer_instructions),
   }
+  if (options.dynamicTools) params.dynamicTools = await dynamicToolsForAppServer()
   if (options.ephemeral) params.ephemeral = booleanValue(payload.ephemeral)
   return clean(params)
 }
@@ -235,7 +242,7 @@ async function writeMappedThreadId(sessionID, threadID) {
   await fs.writeFile(file, `${JSON.stringify(map, null, 2)}\n`, "utf8")
 }
 
-async function createWebSocketAppServerClient(url) {
+async function createWebSocketAppServerClient(url, { caller = {} } = {}) {
   if (url === "stdio://") {
     throw new Error("GV_CODEX_APP_SERVER_URL=stdio:// is not supported from the timer adapter; use ws://.")
   }
@@ -244,13 +251,19 @@ async function createWebSocketAppServerClient(url) {
 
   let nextId = 1
   const pendingRequests = new Map()
+  const turnWaiters = new Map()
   const ws = await new Promise((resolve, reject) => {
     const socket = new WebSocketImpl(url)
     once(socket, "open", () => resolve(socket))
     once(socket, "error", reject)
     on(socket, "message", (event) => {
       const raw = typeof event === "string" ? event : event?.data ?? event
-      dispatchAppServerMessage(raw, pendingRequests)
+      dispatchAppServerMessage(raw, {
+        pendingRequests,
+        turnWaiters,
+        caller,
+        ws: socket,
+      })
     })
   })
 
@@ -262,6 +275,27 @@ async function createWebSocketAppServerClient(url) {
     },
     notify(method, params) {
       sendJson(ws, { method, params })
+    },
+    waitForTurnCompletion(turnID) {
+      const id = text(turnID)
+      if (!id) return Promise.resolve()
+      const timeoutMs = intEnv("GV_CODEX_APP_SERVER_TURN_TIMEOUT_MS", 600000)
+      return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+          turnWaiters.delete(id)
+          reject(new Error(`app-server turn ${id} timed out`))
+        }, timeoutMs)
+        turnWaiters.set(id, {
+          resolve: (value) => {
+            clearTimeout(timer)
+            resolve(value)
+          },
+          reject: (error) => {
+            clearTimeout(timer)
+            reject(error)
+          },
+        })
+      })
     },
     close() {
       try {
@@ -306,16 +340,38 @@ function timerPrompt(payload, envelope) {
   return text(envelope?.payload?.text)
 }
 
-function dispatchAppServerMessage(raw, pendingRequests) {
+function dispatchAppServerMessage(raw, state) {
   const message = parseJson(raw)
-  if (!message || message.id === undefined || message.id === null) return
-  const pendingRequest = pendingRequests.get(message.id)
-  if (!pendingRequest) return
-  pendingRequests.delete(message.id)
-  if (message.error) {
-    pendingRequest.reject(new Error(message.error.message || JSON.stringify(message.error)))
-  } else {
-    pendingRequest.resolve(message.result)
+  if (!message) return
+
+  if (message.id !== undefined && message.id !== null && state.pendingRequests.has(message.id)) {
+    const pendingRequest = state.pendingRequests.get(message.id)
+    state.pendingRequests.delete(message.id)
+    if (message.error) {
+      pendingRequest.reject(new Error(message.error.message || JSON.stringify(message.error)))
+    } else {
+      pendingRequest.resolve(message.result)
+    }
+    return
+  }
+
+  if (message.method === "item/tool/call" && message.id !== undefined && message.id !== null) {
+    handleDynamicToolCall(message.params || {}, state.caller).then(
+      (result) => sendJson(state.ws, { id: message.id, result }),
+      (error) => sendJson(state.ws, {
+        id: message.id,
+        error: { code: -32603, message: errorMessage(error) },
+      }),
+    )
+    return
+  }
+
+  const turnID = text(message.params?.turn?.id || message.params?.turnId || message.params?.turn_id)
+  if (turnID && state.turnWaiters.has(turnID) && /turn\/(completed|failed|cancelled)/.test(text(message.method))) {
+    const waiter = state.turnWaiters.get(turnID)
+    state.turnWaiters.delete(turnID)
+    if (message.method === "turn/completed") waiter.resolve(message.params)
+    else waiter.reject(new Error(`app-server ${message.method}`))
   }
 }
 
