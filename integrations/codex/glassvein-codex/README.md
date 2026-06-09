@@ -5,7 +5,7 @@ Codex-side GlassVein bridge. It lives beside the opencode integration and provid
 ## What It Does
 
 - Captures Codex `UserPromptSubmit`, `PreToolUse`, and `Stop` lifecycle state into plugin data as JSONL or direct MCP call context.
-- Injects bounded GlassVein metadata through `UserPromptSubmit.additionalContext`.
+- Can inject bounded GlassVein metadata through `UserPromptSubmit.additionalContext` when explicitly enabled.
 - Optionally publishes `session_update` upload envelopes to a local GlassVein router.
 - Provides a reusable MCP hub script that can back separate Codex MCP servers such as `refs` and `timer` while injecting Codex session ownership fields.
 - Can receive GV `control/add_prompt` envelopes from the router and start a Codex app-server turn on an existing, resumed, forked, or newly created app-server conversation thread.
@@ -25,6 +25,7 @@ integrations/codex/glassvein-codex/
   gv-mcp.registry.example.json
   scripts/gv-mcp-hub.mjs
   scripts/gv-mcp-registry.mjs
+  scripts/gv-codex-configure-mcp.mjs
   scripts/gv-codex-state-store.mjs
   scripts/gv-session-context.mjs
   scripts/gv-codex-app-server-bridge.mjs
@@ -34,7 +35,7 @@ integrations/codex/glassvein-codex/
 
 ## Configuration
 
-The plugin works without a running router. By default it records local hook state when Codex provides `PLUGIN_DATA`, injects concise session metadata, and does not attempt WebSocket upload.
+The plugin works without a running router. By default it records local hook state when Codex provides `PLUGIN_DATA`, keeps prompt-visible session metadata off, and does not attempt WebSocket upload. MCP tool ownership injection remains enabled through `PreToolUse`.
 
 Environment variables:
 
@@ -42,9 +43,9 @@ Environment variables:
 - `GV_CODEX_STATE_DIR=/path/to/state` overrides the capture directory.
 - `GV_CODEX_CAPTURE_PROMPT=none|preview|full` controls prompt capture; default is `preview`.
 - `GV_CODEX_CAPTURE_ASSISTANT=none|preview|full` controls assistant stop-message capture; default is `preview`.
-- `GV_CODEX_INJECT=0` disables `additionalContext` injection.
-- `GV_CODEX_CONTEXT_FILE=/path/a.md:/path/b.md` injects extra local context files.
-- `GV_CODEX_CONTEXT_INLINE="..."` injects inline context for tests or local experiments.
+- `GV_CODEX_INJECT=1` enables prompt-visible `additionalContext` injection.
+- `GV_CODEX_CONTEXT_FILE=/path/a.md:/path/b.md` injects extra local context files when `GV_CODEX_INJECT=1`.
+- `GV_CODEX_CONTEXT_INLINE="..."` injects inline context for tests or local experiments when `GV_CODEX_INJECT=1`.
 - `GV_CODEX_SEND_ROUTER=1` enables router upload.
 - `GV_CODEX_ROUTER_URL=ws://127.0.0.1:7240` overrides the router URL.
 - `GV_CODEX_DOMAIN`, `GV_CODEX_RUNTIME`, `GV_CODEX_SESSION`, and `GV_CODEX_NODE_ID` override the OSGP address.
@@ -52,6 +53,7 @@ Environment variables:
 - `GV_CODEX_STATE_DB=/path/to/state_5.sqlite` overrides the Codex state SQLite database used for GV-owned binding data.
 - `GV_MCP_REGISTRY_FILE=/path/to/gv-mcp.registry.json` loads a shared backend MCP server list for one hub process.
 - `GV_MCP_SERVER_NAME=<server-name>` filters the shared MCP registry to one backend, so Codex can show separate MCP servers such as `refs` and `timer` while both use the same hub script.
+- `GV_CODEX_ATTACH_MCP_SERVERS=refs,timer` manually limits which MCP server names receive `PreToolUse` context injection. This is usually unnecessary when the generated static MCP config below is used.
 - `GV_CODEX_APP_SERVER_URL=ws://127.0.0.1:4510` enables GV `control/add_prompt` delivery as Codex app-server `turn/start` on an existing thread.
 - `GV_CODEX_APP_THREAD_MODE=existing|auto|start|resume|fork` selects how GV delivery binds to Codex app-server threads. The default is `existing`, which does not create threads.
 - `GV_CODEX_APP_DYNAMIC_TOOLS=0` disables exposing GV MCP registry entries as app-server dynamic tools.
@@ -89,11 +91,11 @@ Prompt text is not included in injected context. Local capture stores a preview 
 
 The plugin stores GV ownership binding inside Codex's SQLite state database, but only in GV-owned tables. Command hook payload is the primary source: `UserPromptSubmit` and `Stop` record `input.thread_id || input.session_id` as the Codex binding and write `gv_session_bindings`.
 
-For MCP tool calls, the reliable path is the `PreToolUse` hook. Codex command hooks expose `session_id`, `turn_id`, `tool_use_id`, and, for subagents, `agent_id`. The GV `PreToolUse` hook attaches those values to GV MCP arguments as `__gvCodexContext`; the hub removes that private field before forwarding to the backend and uses it to inject fields such as `ExecutorSessionID`, `ExecutorThreadID`, `ExecutorTurnID`, and `ExecutorToolUseID`. The hook only updates MCP tools whose Codex MCP server config points at `gv-mcp-hub.mjs`, so unrelated MCP servers are left unchanged.
+For MCP tool calls, the hub accepts two ownership paths. Codex's native MCP path sends request metadata as `_meta.threadId`; the hub uses that thread id to inject fields such as `ExecutorSessionID` and `ExecutorThreadID`. Tool paths that run `PreToolUse.updatedInput` can also attach `__gvCodexContext`; the hub removes that private field before forwarding to the backend and can additionally inject `ExecutorRootSessionID`, `ExecutorTurnID`, and `ExecutorToolUseID` when those values are available. The hook only updates MCP tools whose Codex MCP server config points at `gv-mcp-hub.mjs`, so unrelated MCP servers are left unchanged.
 
-Multiple Codex threads can share one GV hub process. Ownership is carried per tool call, so thread A and thread B remain isolated even when they call the same backend MCP server. Subagent calls use `agent_id` as `ExecutorThreadID` and keep the root Codex session in `ExecutorRootSessionID`.
+Multiple Codex threads can share one GV hub process. Ownership is carried per tool call, so thread A and thread B remain isolated even when they call the same backend MCP server. Native MCP calls use Codex's `threadId` metadata; PreToolUse-rewritten calls can use `agent_id` as `ExecutorThreadID` and keep the root Codex session in `ExecutorRootSessionID`.
 
-The hub does not infer the current caller by scanning Codex's `threads` table, by reading GV binding rows, or by using session environment variables. Without direct hook context, MCP ownership is treated as missing. The plugin does not update Codex-owned tables such as `threads`, `thread_dynamic_tools`, or `thread_goals`.
+The hub does not infer the current caller by scanning Codex's `threads` table, by reading GV binding rows, or by using session environment variables. Without direct `__gvCodexContext` or native MCP `_meta.threadId`, MCP ownership is treated as missing. The plugin does not update Codex-owned tables such as `threads`, `thread_dynamic_tools`, or `thread_goals`.
 
 The database path is resolved from `sqlite_home` in Codex config, then `CODEX_SQLITE_HOME`, then `CODEX_HOME`, and finally `~/.codex`. The latest `state_*.sqlite` file is used. Set `GV_CODEX_STATE_DB` to force an exact database path for tests or local debugging.
 
@@ -161,7 +163,15 @@ GV_MCP_SERVER_NAME = "timer"
 
 In dedicated mode, `exposePrefix: false` exposes backend tools directly under that Codex MCP server, for example `read` under `refs` and `set_timer` under `timer`. Without `GV_MCP_SERVER_NAME`, the hub exposes the whole registry as an aggregate MCP and prefixes tools as `<server>.<tool>` to avoid collisions.
 
-Adding a new MCP backend only needs two changes: add one entry under `servers` in the shared registry, then add one Codex MCP entry with `GV_MCP_SERVER_NAME` set to that entry name. The hub code does not need to change.
+Adding a new MCP backend only needs one registry change plus one config generation command. The registry is the source of truth:
+
+```bash
+npm run configure:mcp -- --registry /path/to/gv-mcp.registry.json --servers refs,timer
+```
+
+The command writes a managed block to `$CODEX_HOME/config.toml` with one static Codex MCP entry per selected registry server. Omit `--servers` to expose every server in the registry. After restarting Codex, the configured servers are visible to normal CLI/TUI sessions, including resumed conversation threads.
+
+The `PreToolUse` hook automatically discovers generated GV MCP entries by reading Codex config entries whose command points at `gv-mcp-hub.mjs`. No per-thread environment variable or Codex database lookup is needed for MCP ownership. Native Codex MCP calls carry `_meta.threadId`; rewritten tool calls carry hook-provided `session_id`, `turn_id`, `tool_use_id`, and optional `agent_id`; the hub rejects calls without either direct context source.
 
 Start the local app-server and configure the plugin with its WebSocket URL when you want GV `control/add_prompt` delivery:
 

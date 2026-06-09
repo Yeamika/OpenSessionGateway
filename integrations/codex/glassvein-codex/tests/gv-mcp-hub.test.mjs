@@ -199,6 +199,74 @@ test("GV MCP hub loads registry and injects Codex session fields", async () => {
   }
 })
 
+test("GV MCP hub accepts Codex native MCP thread metadata", async () => {
+  const temp = mkdtempSync(path.join(tmpdir(), "gv-mcp-hub-meta-"))
+  const seen = []
+  const server = createServer((req, res) => {
+    let raw = ""
+    req.on("data", (chunk) => {
+      raw += chunk
+    })
+    req.on("end", () => {
+      seen.push({ url: req.url, body: JSON.parse(raw) })
+      res.setHeader("content-type", "application/json")
+      res.end(JSON.stringify({
+        jsonrpc: "2.0",
+        id: "server",
+        result: { content: [{ type: "text", text: "ok" }] },
+      }))
+    })
+  })
+
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve))
+  try {
+    const registryFile = path.join(temp, "registry.json")
+    writeFileSync(registryFile, JSON.stringify({
+      servers: {
+        demo: {
+          type: "http-jsonrpc",
+          url: `http://127.0.0.1:${server.address().port}/mcp/demo`,
+          inject: ["ExecutorSessionID", "ExecutorThreadID", "ExecutorRootSessionID"],
+          tools: {
+            ping: {
+              target: "Ping",
+              inputSchema: { type: "object", properties: {}, additionalProperties: true },
+            },
+          },
+        },
+      },
+    }), "utf8")
+
+    const result = await runHub([
+      {
+        jsonrpc: "2.0",
+        id: 1,
+        method: "tools/call",
+        params: {
+          name: "demo.ping",
+          arguments: { message: "native" },
+          _meta: { threadId: "codex-thread-native" },
+        },
+      },
+    ], {
+      GV_CODEX_RECEIVE_ROUTER: "0",
+      GV_MCP_REGISTRY_FILE: registryFile,
+    })
+
+    assert.equal(result.status, 0, result.stderr)
+    assert.equal(JSON.parse(result.stdout).result.content[0].text, "ok")
+    assert.deepEqual(seen[0].body.params.arguments, {
+      message: "native",
+      ExecutorSessionID: "codex-thread-native",
+      ExecutorThreadID: "codex-thread-native",
+      ExecutorRootSessionID: "codex-thread-native",
+    })
+  } finally {
+    server.close()
+    rmSync(temp, { recursive: true, force: true })
+  }
+})
+
 test("GV MCP hub ignores Codex thread env without a captured binding", async () => {
   const temp = mkdtempSync(path.join(tmpdir(), "gv-mcp-hub-"))
   const seen = []

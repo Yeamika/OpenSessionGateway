@@ -252,7 +252,7 @@ async function captureState(state) {
 }
 
 async function buildAdditionalContext(input, state, capture, router, binding) {
-  if (!boolEnv("GV_CODEX_INJECT", true)) return null
+  if (!boolEnv("GV_CODEX_INJECT", false)) return null
 
   const contextText = await readConfiguredContext(text(input.cwd))
   const lines = [

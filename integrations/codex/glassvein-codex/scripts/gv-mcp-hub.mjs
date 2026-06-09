@@ -55,10 +55,10 @@ async function callTool(params) {
   const entry = toolIndex.byName.get(exposedName)
   if (!entry) throw new Error(`unknown tool: ${exposedName}`)
 
-  const { args: userArgs, context } = extractGvCodexContext(params.arguments)
+  const { args: userArgs, context } = extractGvCodexContext(params.arguments, params)
   const caller = await readCaller(context)
   if (!caller.sessionID) {
-    throw new Error("No GV Codex tool context was attached; enable the GlassVein PreToolUse hook so MCP calls can carry session ownership.")
+    throw new Error("No GV Codex tool context was attached; enable the GlassVein PreToolUse hook or use a Codex MCP client that sends _meta.threadId so MCP calls can carry session ownership.")
   }
   ensureReceiverForCaller(caller)
   await ensureRouteForCaller(caller)
@@ -68,14 +68,33 @@ async function callTool(params) {
   return isMcpToolResult(result) ? result : textResult(result)
 }
 
-function extractGvCodexContext(args) {
+function extractGvCodexContext(args, params = {}) {
   const source = args && typeof args === "object" && !Array.isArray(args) ? args : {}
   const { __gvCodexContext, ...cleanArgs } = source
+  const directContext = __gvCodexContext && typeof __gvCodexContext === "object" && !Array.isArray(__gvCodexContext)
+    ? __gvCodexContext
+    : null
   return {
     args: cleanArgs,
-    context: __gvCodexContext && typeof __gvCodexContext === "object" && !Array.isArray(__gvCodexContext)
-      ? __gvCodexContext
-      : null,
+    context: directContext || contextFromMcpMeta(params),
+  }
+}
+
+function contextFromMcpMeta(params) {
+  const meta = objectValue(params?._meta) || objectValue(params?.meta)
+  if (!meta) return null
+  const turnMeta = objectValue(meta["x-codex-turn-metadata"]) || objectValue(meta.codexTurnMetadata)
+  const threadID = text(meta.threadId || meta.thread_id || turnMeta?.thread_id || turnMeta?.threadId)
+  if (!threadID) return null
+  return {
+    version: 1,
+    sessionID: threadID,
+    threadID,
+    rootSessionID: text(turnMeta?.root_thread_id || turnMeta?.rootThreadId) || threadID,
+    turnID: text(meta.turnId || meta.turn_id || turnMeta?.turn_id || turnMeta?.turnId),
+    toolUseID: text(meta.callId || meta.call_id),
+    runtimeID: text(meta.runtimeId || meta.runtimeID || meta.runtime_id),
+    cwd: text(meta.cwd || turnMeta?.cwd),
   }
 }
 
@@ -162,6 +181,10 @@ function write(value) {
 
 function text(value) {
   return typeof value === "string" ? value.trim() : ""
+}
+
+function objectValue(value) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : null
 }
 
 function errorMessage(error) {

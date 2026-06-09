@@ -1,14 +1,16 @@
 import assert from "node:assert/strict"
 import { spawnSync } from "node:child_process"
-import { mkdtempSync, readFileSync, rmSync } from "node:fs"
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 import test from "node:test"
 
+import { configureCodexMcp } from "../scripts/gv-codex-configure-mcp.mjs"
+
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
 
-test("UserPromptSubmit captures state, records binding, and injects bounded context", async () => {
+test("UserPromptSubmit captures state, records binding, and injects bounded context when enabled", async () => {
   const pluginData = mkdtempSync(path.join(tmpdir(), "gv-codex-plugin-"))
   try {
     const stateDb = path.join(pluginData, "state_5.sqlite")
@@ -28,6 +30,7 @@ test("UserPromptSubmit captures state, records binding, and injects bounded cont
       PLUGIN_DATA: pluginData,
       GV_CODEX_STATE_DB: stateDb,
       GV_CODEX_SEND_ROUTER: "0",
+      GV_CODEX_INJECT: "1",
       GV_CODEX_CONTEXT_INLINE: "repo hint",
       CODEX_THREAD_ID: "wrong-env-thread",
     })
@@ -53,6 +56,40 @@ test("UserPromptSubmit captures state, records binding, and injects bounded cont
     const binding = await readBinding(stateDb, "thread/one")
     assert.equal(binding.session_id, "session/one")
     assert.equal(binding.thread_id, "thread/one")
+  } finally {
+    rmSync(pluginData, { recursive: true, force: true })
+  }
+})
+
+test("UserPromptSubmit does not inject visible prompt context by default", () => {
+  const pluginData = mkdtempSync(path.join(tmpdir(), "gv-codex-plugin-"))
+  try {
+    const input = {
+      hook_event_name: "UserPromptSubmit",
+      session_id: "session/two",
+      thread_id: "thread/two",
+      turn_id: "turn-default",
+      cwd: pluginRoot,
+      model: "gpt-test",
+      permission_mode: "default",
+      prompt: "hello",
+      transcript_path: null,
+    }
+
+    const result = runHook("hooks/user-prompt-submit.mjs", input, {
+      PLUGIN_DATA: pluginData,
+      GV_CODEX_STATE_DB: path.join(pluginData, "state_5.sqlite"),
+      GV_CODEX_SEND_ROUTER: "0",
+    })
+
+    assert.equal(result.status, 0, result.stderr)
+    assert.deepEqual(JSON.parse(result.stdout), {
+      continue: true,
+      suppressOutput: true,
+      hookSpecificOutput: {
+        hookEventName: "UserPromptSubmit",
+      },
+    })
   } finally {
     rmSync(pluginData, { recursive: true, force: true })
   }
@@ -209,6 +246,56 @@ test("PreToolUse recognizes slash-style GV MCP tool names", () => {
     assert.equal(output.hookSpecificOutput.updatedInput.__gvCodexContext.toolUseID, "tool-use-3")
   } finally {
     rmSync(pluginData, { recursive: true, force: true })
+  }
+})
+
+test("PreToolUse discovers configured GV MCP servers from Codex config", async () => {
+  const temp = mkdtempSync(path.join(tmpdir(), "gv-codex-config-"))
+  try {
+    const registryFile = path.join(temp, "gv-mcp.registry.json")
+    const codexHome = path.join(temp, "codex-home")
+    const configFile = path.join(codexHome, "config.toml")
+    writeFileSync(registryFile, JSON.stringify({
+      servers: {
+        refs: {
+          type: "http-jsonrpc",
+          url: "http://127.0.0.1:9999/mcp/refs",
+          inject: ["ExecutorSessionID"],
+          tools: {
+            rg: {
+              inputSchema: { type: "object", properties: {}, additionalProperties: true },
+            },
+          },
+        },
+      },
+    }), "utf8")
+
+    await configureCodexMcp({ registryFile, configFile, servers: ["refs"] })
+
+    const input = {
+      hook_event_name: "PreToolUse",
+      session_id: "thread-session",
+      turn_id: "turn-6",
+      cwd: pluginRoot,
+      model: "gpt-test",
+      permission_mode: "default",
+      tool_name: "mcp__refs__rg",
+      tool_use_id: "tool-use-4",
+      tool_input: { pattern: "GlassVein" },
+      transcript_path: null,
+    }
+
+    const result = runHook("hooks/pre-tool-use.mjs", input, {
+      PLUGIN_DATA: temp,
+      CODEX_HOME: codexHome,
+    })
+
+    assert.equal(result.status, 0, result.stderr)
+    const output = JSON.parse(result.stdout)
+    assert.equal(output.hookSpecificOutput.updatedInput.__gvCodexContext.threadID, "thread-session")
+    assert.equal(output.hookSpecificOutput.updatedInput.__gvCodexContext.toolUseID, "tool-use-4")
+  } finally {
+    rmSync(temp, { recursive: true, force: true })
   }
 })
 
