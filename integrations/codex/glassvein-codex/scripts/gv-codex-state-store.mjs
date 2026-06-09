@@ -63,11 +63,14 @@ export async function resolveCodexSessionBinding({ sessionID, threadID } = {}) {
   if (!dbPath) return null
 
   try {
+    const processContext = await inferCodexProcessContext()
     return await withCodexDb(dbPath, (db) => {
       const binding = readBinding(db, { sessionID, threadID })
       if (binding?.sessionID) return binding
 
+      const allowInference = !text(sessionID) && !text(threadID)
       const codexThread = readCodexThread(db, text(threadID || sessionID))
+        || (allowInference ? readLikelyCodexThread(db, processContext) : null)
       if (!codexThread?.id) return null
       const cwd = text(codexThread.cwd)
       return clean({
@@ -205,6 +208,46 @@ function readCodexThread(db, threadID) {
   }
 }
 
+function readLikelyCodexThread(db, context) {
+  const cwd = text(context?.cwd)
+  const source = text(context?.source)
+  if (!cwd && !source) return null
+
+  try {
+    if (cwd && source) {
+      const row = db.prepare(`
+        SELECT id, rollout_path, cwd, source
+        FROM threads
+        WHERE cwd = ? AND source = ?
+        ORDER BY updated_at_ms DESC, updated_at DESC
+        LIMIT 1
+      `).get(cwd, source)
+      if (row) return row
+    }
+
+    if (cwd) {
+      const row = db.prepare(`
+        SELECT id, rollout_path, cwd, source
+        FROM threads
+        WHERE cwd = ?
+        ORDER BY updated_at_ms DESC, updated_at DESC
+        LIMIT 1
+      `).get(cwd)
+      if (row) return row
+    }
+
+    return db.prepare(`
+      SELECT id, rollout_path, cwd, source
+      FROM threads
+      WHERE source = ?
+      ORDER BY updated_at_ms DESC, updated_at DESC
+      LIMIT 1
+    `).get(source) || null
+  } catch {
+    return null
+  }
+}
+
 function bindingFromRow(row) {
   return clean({
     threadID: text(row.thread_id),
@@ -230,6 +273,42 @@ async function exists(file) {
     return true
   } catch {
     return false
+  }
+}
+
+async function inferCodexProcessContext() {
+  const pid = process.pid
+  const ancestors = await processAncestors(pid, 5)
+  const codex = ancestors.find((item) => /\bcodex\b/.test(item.cmdline))
+  const source = codex?.cmdline.includes(" exec ") ? "exec" : codex ? "cli" : ""
+  return clean({
+    source,
+    cwd: text(codex?.cwd) || text(ancestors[0]?.cwd) || process.cwd(),
+  })
+}
+
+async function processAncestors(pid, limit) {
+  const result = []
+  let current = pid
+  for (let index = 0; index < limit && current > 1; index += 1) {
+    const info = await readProcessInfo(current)
+    if (!info) break
+    result.push(info)
+    current = info.ppid
+  }
+  return result
+}
+
+async function readProcessInfo(pid) {
+  try {
+    const stat = await fs.readFile(`/proc/${pid}/stat`, "utf8")
+    const match = /^\d+\s+\(.+\)\s+\S+\s+(\d+)/.exec(stat)
+    const ppid = match ? Number.parseInt(match[1], 10) : 0
+    const cmdline = (await fs.readFile(`/proc/${pid}/cmdline`, "utf8")).replace(/\0/g, " ").trim()
+    const cwd = await fs.readlink(`/proc/${pid}/cwd`)
+    return { pid, ppid, cmdline, cwd }
+  } catch {
+    return null
   }
 }
 

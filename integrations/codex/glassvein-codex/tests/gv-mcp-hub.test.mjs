@@ -331,6 +331,80 @@ test("GV MCP hub resolves ownership from Codex state binding", async () => {
   }
 })
 
+test("GV MCP hub infers ownership from Codex thread state", async () => {
+  const temp = mkdtempSync(path.join(tmpdir(), "gv-mcp-hub-"))
+  const seen = []
+  const server = createServer((req, res) => {
+    let raw = ""
+    req.on("data", (chunk) => {
+      raw += chunk
+    })
+    req.on("end", () => {
+      seen.push(JSON.parse(raw))
+      res.setHeader("content-type", "application/json")
+      res.end(JSON.stringify({
+        jsonrpc: "2.0",
+        id: "server",
+        result: { content: [{ type: "text", text: "ok" }] },
+      }))
+    })
+  })
+
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve))
+  try {
+    const port = server.address().port
+    const registryFile = path.join(temp, "registry.json")
+    const stateDb = path.join(temp, "state_5.sqlite")
+    await writeThreadDb(stateDb, {
+      threadID: "thread-state-1",
+      cwd: pluginRoot,
+      source: "cli",
+    })
+    writeFileSync(registryFile, JSON.stringify({
+      servers: {
+        demo: {
+          type: "http-jsonrpc",
+          url: `http://127.0.0.1:${port}/mcp/demo`,
+          inject: ["ExecutorSessionID", "threadID", "cwd"],
+          tools: {
+            ping: {
+              target: "Ping",
+              inputSchema: { type: "object", properties: {}, additionalProperties: false },
+            },
+          },
+        },
+      },
+    }), "utf8")
+
+    const result = await runHub([
+      {
+        jsonrpc: "2.0",
+        id: 1,
+        method: "tools/call",
+        params: { name: "demo.ping", arguments: {} },
+      },
+    ], {
+      GV_CODEX_RECEIVE_ROUTER: "0",
+      GV_MCP_REGISTRY_FILE: registryFile,
+      GV_CODEX_STATE_DB: stateDb,
+      GV_CODEX_SESSION_ID: "",
+      GV_CODEX_THREAD_ID: "",
+      CODEX_THREAD_ID: "",
+      ExecutorSessionID: "",
+    })
+
+    assert.equal(result.status, 0, result.stderr)
+    assert.deepEqual(seen[0].params.arguments, {
+      ExecutorSessionID: "thread-state-1",
+      threadID: "thread-state-1",
+      cwd: pluginRoot,
+    })
+  } finally {
+    server.close()
+    rmSync(temp, { recursive: true, force: true })
+  }
+})
+
 function runHub(messages, env) {
   return new Promise((resolve) => {
     const child = spawn("node", [path.join(pluginRoot, "scripts/gv-mcp-hub.mjs")], {
@@ -351,6 +425,36 @@ function runHub(messages, env) {
     child.on("exit", (status) => resolve({ status, stdout, stderr }))
     child.stdin.end(`${messages.map((message) => JSON.stringify(message)).join("\n")}\n`)
   })
+}
+
+async function writeThreadDb(dbPath, thread) {
+  const { DatabaseSync } = await import("node:sqlite")
+  const db = new DatabaseSync(dbPath)
+  try {
+    db.exec(`
+      CREATE TABLE threads (
+        id TEXT PRIMARY KEY NOT NULL,
+        rollout_path TEXT NOT NULL,
+        cwd TEXT NOT NULL,
+        source TEXT NOT NULL,
+        updated_at INTEGER NOT NULL,
+        updated_at_ms INTEGER NOT NULL
+      )
+    `)
+    db.prepare(`
+      INSERT INTO threads (
+        id,
+        rollout_path,
+        cwd,
+        source,
+        updated_at,
+        updated_at_ms
+      )
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(thread.threadID, `/tmp/${thread.threadID}.jsonl`, thread.cwd, thread.source, 1, 1)
+  } finally {
+    db.close()
+  }
 }
 
 async function writeBindingDb(dbPath, binding) {
