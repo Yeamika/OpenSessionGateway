@@ -28,7 +28,6 @@ test("UserPromptSubmit captures state, records binding, and injects bounded cont
       GV_CODEX_STATE_DB: stateDb,
       GV_CODEX_SEND_ROUTER: "0",
       GV_CODEX_CONTEXT_INLINE: "repo hint",
-      CODEX_THREAD_ID: "thread-one",
     })
 
     assert.equal(result.status, 0, result.stderr)
@@ -49,9 +48,9 @@ test("UserPromptSubmit captures state, records binding, and injects bounded cont
     assert.match(state.promptSha256, /^[a-f0-9]{64}$/)
     assert.equal(state.promptPreview, "please inspect gv secret-value")
 
-    const binding = await readBinding(stateDb, "thread-one")
+    const binding = await readBinding(stateDb, "session/one")
     assert.equal(binding.session_id, "session/one")
-    assert.equal(binding.thread_id, "thread-one")
+    assert.equal(binding.thread_id, "session/one")
   } finally {
     rmSync(pluginData, { recursive: true, force: true })
   }

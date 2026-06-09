@@ -83,7 +83,7 @@ Prompt text is not included in injected context. Local capture stores a preview 
 
 ## Codex State Binding
 
-The plugin stores GV ownership binding inside Codex's SQLite state database, but only in GV-owned tables. It reads Codex's `threads` table to resolve the active `CODEX_THREAD_ID`, then creates or updates `gv_session_bindings` with the mapped GV session data. If Codex does not pass a thread env var to an MCP subprocess, the hub infers the likely thread from the parent Codex process and the `threads` table. It does not update Codex-owned tables such as `threads`, `thread_dynamic_tools`, or `thread_goals`.
+The plugin stores GV ownership binding inside Codex's SQLite state database, but only in GV-owned tables. Hook payload is the primary source: `UserPromptSubmit` and `Stop` record `input.thread_id || input.session_id` as the Codex thread binding and write `gv_session_bindings`. The MCP hub can also read Codex's `threads` table to resolve a bound thread, and if Codex does not pass a thread id to an MCP subprocess, the hub infers the likely thread from the parent Codex process and the `threads` table. It does not update Codex-owned tables such as `threads`, `thread_dynamic_tools`, or `thread_goals`.
 
 The database path is resolved from `sqlite_home` in Codex config, then `CODEX_SQLITE_HOME`, then `CODEX_HOME`, and finally `~/.codex`. The latest `state_*.sqlite` file is used. Set `GV_CODEX_STATE_DB` to force an exact database path for tests or local debugging.
 

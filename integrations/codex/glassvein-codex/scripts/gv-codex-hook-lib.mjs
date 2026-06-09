@@ -83,7 +83,7 @@ function buildState(input, event) {
     timestamp: new Date().toISOString(),
     hookEventName: text(input.hook_event_name),
     sessionID: text(input.session_id),
-    threadID: nullableText(input.thread_id || process.env.CODEX_THREAD_ID),
+    threadID: nullableText(input.thread_id || input.session_id),
     turnID: text(input.turn_id),
     cwd: text(input.cwd),
     model: text(input.model),
