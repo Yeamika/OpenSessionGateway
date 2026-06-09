@@ -163,7 +163,7 @@ test("PreToolUse injects direct GV Codex context into MCP arguments", () => {
     assert.equal(output.continue, true)
     assert.equal(output.suppressOutput, undefined)
     assert.equal(output.hookSpecificOutput.hookEventName, "PreToolUse")
-    assert.equal(output.hookSpecificOutput.permissionDecision, "allow")
+    assert.equal(output.hookSpecificOutput.permissionDecision, undefined)
     assert.deepEqual(output.hookSpecificOutput.updatedInput, {
       pattern: "GlassVein",
       __gvCodexContext: {
@@ -211,7 +211,6 @@ test("PreToolUse leaves non-GV MCP arguments unchanged", () => {
       continue: true,
       hookSpecificOutput: {
         hookEventName: "PreToolUse",
-        permissionDecision: "allow",
       },
     })
   } finally {
