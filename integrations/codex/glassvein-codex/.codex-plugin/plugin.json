@@ -1,0 +1,23 @@
+{
+  "name": "glassvein-codex",
+  "version": "0.1.0",
+  "description": "Codex bridge for GlassVein session capture and prompt context injection.",
+  "author": {
+    "name": "OpenSessionGateway"
+  },
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "GlassVein Codex",
+    "shortDescription": "Capture Codex session state and inject GlassVein context.",
+    "longDescription": "GlassVein Codex records Codex prompt/stop lifecycle metadata, can publish session_update events to a local GlassVein router, and injects bounded GlassVein context through Codex hooks.",
+    "developerName": "OpenSessionGateway",
+    "category": "Productivity",
+    "capabilities": [
+      "hooks",
+      "skills",
+      "mcp"
+    ],
+    "defaultPrompt": "Use GlassVein context for this Codex session."
+  }
+}

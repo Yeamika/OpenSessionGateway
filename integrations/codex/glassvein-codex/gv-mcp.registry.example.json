@@ -1,0 +1,64 @@
+{
+  "servers": {
+    "memory": {
+      "type": "http-jsonrpc",
+      "url": "http://127.0.0.1:8789/mcp/memory",
+      "runtimeQueryParam": "runtimeID",
+      "inject": [
+        "ExecutorRuntimeID",
+        "ExecutorSessionID",
+        "threadID",
+        "cwd"
+      ],
+      "tools": {
+        "search": {
+          "target": "Search",
+          "description": "Search a backend memory MCP with Codex session injection.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "query": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "query"
+            ],
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    "scheduler": {
+      "type": "http-jsonrpc",
+      "url": "http://127.0.0.1:8789/mcp/scheduler",
+      "runtimeQueryParam": "runtimeID",
+      "inject": [
+        "ExecutorRuntimeID",
+        "ExecutorSessionID"
+      ],
+      "tools": {
+        "set_alarm": {
+          "target": "SetAlarm",
+          "description": "Set a backend scheduler alarm for this Codex session.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "message": {
+                "type": "string"
+              },
+              "afterSeconds": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "message",
+              "afterSeconds"
+            ],
+            "additionalProperties": false
+          }
+        }
+      }
+    }
+  }
+}

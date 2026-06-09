@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "gv": {
+      "command": "node",
+      "args": [
+        "./scripts/gv-mcp-hub.mjs"
+      ]
+    }
+  }
+}
