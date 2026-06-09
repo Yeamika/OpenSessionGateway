@@ -1,7 +1,10 @@
+import { promises as fs } from "node:fs"
+
 const DEFAULT_ROUTER_URL = "ws://127.0.0.1:7200"
 const DEFAULT_RUNTIME_ID = "codex"
 const DEFAULT_DOMAIN = "domain-a"
 const receiverSessions = new Set()
+const APP_THREAD_MODES = new Set(["existing", "auto", "start", "resume", "fork"])
 
 export async function startGvReceiver(readCaller) {
   if (!boolEnv("GV_CODEX_RECEIVE_ROUTER", true)) return
@@ -97,10 +100,10 @@ async function handleGvMessage(raw, caller) {
   const payload = message.payload && typeof message.payload === "object" ? message.payload : {}
   const prompt = timerPrompt(payload, message)
   if (!prompt) return
-  await startCodexTurn(caller, prompt)
+  await startCodexTurn(caller, prompt, payload)
 }
 
-async function startCodexTurn(caller, prompt) {
+export async function startCodexTurn(caller, prompt, payload = {}) {
   const client = await createWebSocketAppServerClient(appServerUrl())
   try {
     await client.request("initialize", {
@@ -112,10 +115,10 @@ async function startCodexTurn(caller, prompt) {
       capabilities: { experimentalApi: true },
     })
     client.notify("initialized", {})
-    const threadId = await resolveThreadId(client, caller)
+    const threadId = await resolveAppServerThreadId(client, caller, payload)
     await client.request("turn/start", {
       threadId,
-      cwd: caller.cwd || process.cwd(),
+      cwd: appServerCwd(caller, payload) || process.cwd(),
       input: [{ type: "text", text: prompt }],
     })
   } finally {
@@ -123,22 +126,113 @@ async function startCodexTurn(caller, prompt) {
   }
 }
 
-async function resolveThreadId(client, caller) {
-  const existing = text(caller.threadID) || await readMappedThreadId(caller.sessionID)
+export async function resolveAppServerThreadId(client, caller, payload = {}) {
+  const mode = appThreadMode(payload)
+  if (mode === "start") return await startAppThread(client, caller, payload)
+
+  const mappedOrExplicit = await mappedOrExplicitThreadId(caller, payload)
+  if (mode === "auto") {
+    if (mappedOrExplicit) return await resumeAppThread(client, caller, payload, mappedOrExplicit)
+    return await startAppThread(client, caller, payload)
+  }
+
+  const existing = mappedOrExplicit || text(caller.threadID)
+  if (mode === "resume") return await resumeAppThread(client, caller, payload, existing)
+  if (mode === "fork") return await forkAppThread(client, caller, payload, existing)
   if (existing) return existing
   throw new Error(`No Codex app-server thread binding for session ${caller.sessionID}`)
+}
+
+async function startAppThread(client, caller, payload) {
+  const result = await client.request("thread/start", threadParams(caller, payload, { ephemeral: true }))
+  const threadId = responseThreadId(result, "thread/start")
+  await writeMappedThreadId(caller.sessionID, threadId)
+  return threadId
+}
+
+async function resumeAppThread(client, caller, payload, threadId) {
+  const target = text(threadId)
+  if (!target) throw new Error(`No Codex app-server thread binding for session ${caller.sessionID}`)
+  const result = await client.request("thread/resume", {
+    threadId: target,
+    ...threadParams(caller, payload),
+  })
+  const resolved = responseThreadId(result, "thread/resume") || target
+  await writeMappedThreadId(caller.sessionID, resolved)
+  return resolved
+}
+
+async function forkAppThread(client, caller, payload, threadId) {
+  const source = text(payload.sourceThreadId || payload.source_thread_id || payload.fromThreadId || payload.from_thread_id) || text(threadId)
+  if (!source) throw new Error(`No Codex app-server thread binding to fork for session ${caller.sessionID}`)
+  const result = await client.request("thread/fork", {
+    threadId: source,
+    ...threadParams(caller, payload, { ephemeral: true }),
+  })
+  const forked = responseThreadId(result, "thread/fork")
+  await writeMappedThreadId(caller.sessionID, forked)
+  return forked
+}
+
+async function mappedOrExplicitThreadId(caller, payload) {
+  return explicitThreadId(payload) || await readMappedThreadId(caller.sessionID)
+}
+
+function explicitThreadId(payload) {
+  return text(payload.codexThreadId || payload.codexThreadID || payload.threadId || payload.thread_id || payload.appServerThreadId || payload.app_server_thread_id)
+}
+
+function appThreadMode(payload) {
+  const requested = text(payload.codexThreadMode || payload.threadMode || payload.thread_mode || process.env.GV_CODEX_APP_THREAD_MODE)
+  return APP_THREAD_MODES.has(requested) ? requested : "existing"
+}
+
+function threadParams(caller, payload, options = {}) {
+  const params = {
+    cwd: appServerCwd(caller, payload),
+    model: text(payload.codexModel || payload.model),
+    modelProvider: text(payload.codexModelProvider || payload.modelProvider || payload.model_provider),
+    baseInstructions: text(payload.baseInstructions || payload.base_instructions),
+    developerInstructions: text(payload.developerInstructions || payload.developer_instructions),
+  }
+  if (options.ephemeral) params.ephemeral = booleanValue(payload.ephemeral)
+  return clean(params)
+}
+
+function appServerCwd(caller, payload) {
+  return text(payload.codexCwd || payload.cwd) || text(caller.cwd)
+}
+
+function responseThreadId(result, method) {
+  const threadId = text(result?.thread?.id || result?.threadId || result?.thread_id)
+  if (!threadId) throw new Error(`${method} response did not include a thread id`)
+  return threadId
 }
 
 async function readMappedThreadId(sessionID) {
   const session = text(sessionID)
   if (!session) return ""
   try {
-    const raw = await import("node:fs/promises").then((fs) => fs.readFile(threadMapPath(), "utf8"))
+    const raw = await fs.readFile(threadMapPath(), "utf8")
     const map = JSON.parse(raw)
     return text(map[session])
   } catch {
     return ""
   }
+}
+
+async function writeMappedThreadId(sessionID, threadID) {
+  const session = text(sessionID)
+  const thread = text(threadID)
+  if (!session || !thread) return
+  const file = threadMapPath()
+  let map = {}
+  try {
+    map = JSON.parse(await fs.readFile(file, "utf8"))
+  } catch {}
+  map[session] = thread
+  await fs.mkdir(pathDirname(file), { recursive: true })
+  await fs.writeFile(file, `${JSON.stringify(map, null, 2)}\n`, "utf8")
 }
 
 async function createWebSocketAppServerClient(url) {
@@ -317,6 +411,20 @@ function intEnv(name, defaultValue) {
 
 function safeSegment(value) {
   return text(value).replace(/[^a-zA-Z0-9._-]+/g, "_").replace(/^_+|_+$/g, "") || "unknown"
+}
+
+function booleanValue(value) {
+  if (typeof value === "boolean") return value
+  return undefined
+}
+
+function clean(value) {
+  return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined && item !== null && item !== ""))
+}
+
+function pathDirname(file) {
+  const index = file.lastIndexOf("/")
+  return index > 0 ? file.slice(0, index) : "."
 }
 
 function errorMessage(error) {

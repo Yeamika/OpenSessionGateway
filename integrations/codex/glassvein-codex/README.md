@@ -8,7 +8,7 @@ Codex-side GlassVein bridge. It lives beside the opencode integration and provid
 - Injects bounded GlassVein metadata through `UserPromptSubmit.additionalContext`.
 - Optionally publishes `session_update` upload envelopes to a local GlassVein router.
 - Provides a reusable MCP hub script that can back separate Codex MCP servers such as `refs` and `timer` while injecting Codex session ownership fields.
-- Can receive GV `control/add_prompt` envelopes from the router and start a new turn on an existing Codex app-server thread, equivalent to a fresh user message in that session.
+- Can receive GV `control/add_prompt` envelopes from the router and start a Codex app-server turn on an existing, resumed, forked, or newly created app-server conversation thread.
 - Adds a `glassvein` skill with the stable repo rules for GV work.
 
 ## Layout
@@ -52,6 +52,7 @@ Environment variables:
 - `GV_MCP_REGISTRY_FILE=/path/to/gv-mcp.registry.json` loads a shared backend MCP server list for one hub process.
 - `GV_MCP_SERVER_NAME=<server-name>` filters the shared MCP registry to one backend, so Codex can show separate MCP servers such as `refs` and `timer` while both use the same hub script.
 - `GV_CODEX_APP_SERVER_URL=ws://127.0.0.1:4510` enables GV `control/add_prompt` delivery as Codex app-server `turn/start` on an existing thread.
+- `GV_CODEX_APP_THREAD_MODE=existing|auto|start|resume|fork` selects how GV delivery binds to Codex app-server threads. The default is `existing`, which does not create threads.
 - `GV_CODEX_THREAD_MAP_FILE=/path/to/app-server-threads.json` points to a JSON map from Codex `sessionID` to existing app-server `threadId`.
 - `GV_CODEX_RECEIVE_ROUTER=0` disables the adapter's GV router receive loop.
 
@@ -165,6 +166,6 @@ Start the local app-server and configure the plugin with its WebSocket URL when 
 codex app-server --listen ws://127.0.0.1:4510
 ```
 
-The hub does not create a new thread on delivery. Missing or stale session-to-thread binding is treated as an error.
+By default, delivery does not create a new app-server thread: missing or stale session-to-thread binding is treated as an error. To use real independent Codex conversation threads, set `GV_CODEX_APP_THREAD_MODE=auto` so each GV session starts its own `thread/start` thread and later resumes the mapped thread before `turn/start`. A GV `control/add_prompt` payload can also override this per message with `threadMode: "start"`, `"resume"`, or `"fork"` plus `threadId` or `sourceThreadId` when needed.
 
 The GV router must grant `announce.route` to both the Timer endpoint peer and the Codex adapter peer, otherwise the router will reject route announcements and Timer delivery will be dropped.
