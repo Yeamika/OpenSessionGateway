@@ -15,6 +15,7 @@ test("UserPromptSubmit captures state, records binding, and injects bounded cont
     const input = {
       hook_event_name: "UserPromptSubmit",
       session_id: "session/one",
+      thread_id: "thread/one",
       turn_id: "turn-1",
       cwd: pluginRoot,
       model: "gpt-test",
@@ -28,6 +29,7 @@ test("UserPromptSubmit captures state, records binding, and injects bounded cont
       GV_CODEX_STATE_DB: stateDb,
       GV_CODEX_SEND_ROUTER: "0",
       GV_CODEX_CONTEXT_INLINE: "repo hint",
+      CODEX_THREAD_ID: "wrong-env-thread",
     })
 
     assert.equal(result.status, 0, result.stderr)
@@ -48,17 +50,18 @@ test("UserPromptSubmit captures state, records binding, and injects bounded cont
     assert.match(state.promptSha256, /^[a-f0-9]{64}$/)
     assert.equal(state.promptPreview, "please inspect gv secret-value")
 
-    const binding = await readBinding(stateDb, "session/one")
+    const binding = await readBinding(stateDb, "thread/one")
     assert.equal(binding.session_id, "session/one")
-    assert.equal(binding.thread_id, "session/one")
+    assert.equal(binding.thread_id, "thread/one")
   } finally {
     rmSync(pluginData, { recursive: true, force: true })
   }
 })
 
-test("Stop records completed session state", () => {
+test("Stop records completed session state without using Codex thread env", async () => {
   const pluginData = mkdtempSync(path.join(tmpdir(), "gv-codex-plugin-"))
   try {
+    const stateDb = path.join(pluginData, "state_5.sqlite")
     const input = {
       hook_event_name: "Stop",
       session_id: "session/one",
@@ -73,7 +76,7 @@ test("Stop records completed session state", () => {
 
     const result = runHook("hooks/stop.mjs", input, {
       PLUGIN_DATA: pluginData,
-      GV_CODEX_STATE_DB: path.join(pluginData, "state_5.sqlite"),
+      GV_CODEX_STATE_DB: stateDb,
       GV_CODEX_SEND_ROUTER: "0",
       CODEX_THREAD_ID: "thread-one",
     })
@@ -85,6 +88,125 @@ test("Stop records completed session state", () => {
     const state = JSON.parse(readFileSync(stateFile, "utf8").trim())
     assert.equal(state.event, "assistant_stopped")
     assert.equal(state.assistantPreview, "done")
+
+    const binding = await readBinding(stateDb, "session/one")
+    assert.equal(binding.session_id, "session/one")
+    assert.equal(binding.thread_id, "session/one")
+  } finally {
+    rmSync(pluginData, { recursive: true, force: true })
+  }
+})
+
+test("PreToolUse injects direct GV Codex context into MCP arguments", () => {
+  const pluginData = mkdtempSync(path.join(tmpdir(), "gv-codex-plugin-"))
+  try {
+    const input = {
+      hook_event_name: "PreToolUse",
+      session_id: "root-session",
+      turn_id: "turn-3",
+      agent_id: "agent-thread-1",
+      agent_type: "worker",
+      cwd: pluginRoot,
+      model: "gpt-test",
+      permission_mode: "default",
+      tool_name: "mcp__refs__rg",
+      tool_use_id: "tool-use-1",
+      tool_input: { pattern: "GlassVein" },
+      transcript_path: null,
+    }
+
+    const result = runHook("hooks/pre-tool-use.mjs", input, {
+      PLUGIN_DATA: pluginData,
+      GV_CODEX_ATTACH_MCP_SERVERS: "refs",
+      CODEX_THREAD_ID: "wrong-env-thread",
+    })
+
+    assert.equal(result.status, 0, result.stderr)
+    const output = JSON.parse(result.stdout)
+    assert.equal(output.continue, true)
+    assert.equal(output.hookSpecificOutput.hookEventName, "PreToolUse")
+    assert.equal(output.hookSpecificOutput.permissionDecision, "allow")
+    assert.deepEqual(output.hookSpecificOutput.updatedInput, {
+      pattern: "GlassVein",
+      __gvCodexContext: {
+        version: 1,
+        sessionID: "agent-thread-1",
+        threadID: "agent-thread-1",
+        rootSessionID: "root-session",
+        turnID: "turn-3",
+        toolUseID: "tool-use-1",
+        cwd: pluginRoot,
+        model: "gpt-test",
+        permissionMode: "default",
+        agentID: "agent-thread-1",
+        agentType: "worker",
+      },
+    })
+  } finally {
+    rmSync(pluginData, { recursive: true, force: true })
+  }
+})
+
+test("PreToolUse leaves non-GV MCP arguments unchanged", () => {
+  const pluginData = mkdtempSync(path.join(tmpdir(), "gv-codex-plugin-"))
+  try {
+    const input = {
+      hook_event_name: "PreToolUse",
+      session_id: "root-session",
+      turn_id: "turn-4",
+      cwd: pluginRoot,
+      model: "gpt-test",
+      permission_mode: "default",
+      tool_name: "mcp__other__search",
+      tool_use_id: "tool-use-2",
+      tool_input: { query: "GlassVein" },
+      transcript_path: null,
+    }
+
+    const result = runHook("hooks/pre-tool-use.mjs", input, {
+      PLUGIN_DATA: pluginData,
+      GV_CODEX_ATTACH_MCP_SERVERS: "refs",
+    })
+
+    assert.equal(result.status, 0, result.stderr)
+    assert.deepEqual(JSON.parse(result.stdout), {
+      continue: true,
+      suppressOutput: true,
+      hookSpecificOutput: {
+        hookEventName: "PreToolUse",
+        permissionDecision: "allow",
+      },
+    })
+  } finally {
+    rmSync(pluginData, { recursive: true, force: true })
+  }
+})
+
+test("PreToolUse recognizes slash-style GV MCP tool names", () => {
+  const pluginData = mkdtempSync(path.join(tmpdir(), "gv-codex-plugin-"))
+  try {
+    const input = {
+      hook_event_name: "PreToolUse",
+      session_id: "thread-session",
+      turn_id: "turn-5",
+      cwd: pluginRoot,
+      model: "gpt-test",
+      permission_mode: "default",
+      tool_name: "refs/rg",
+      tool_use_id: "tool-use-3",
+      tool_input: { pattern: "GlassVein" },
+      transcript_path: null,
+    }
+
+    const result = runHook("hooks/pre-tool-use.mjs", input, {
+      PLUGIN_DATA: pluginData,
+      GV_CODEX_ATTACH_MCP_SERVERS: "refs",
+    })
+
+    assert.equal(result.status, 0, result.stderr)
+    const output = JSON.parse(result.stdout)
+    assert.equal(output.hookSpecificOutput.updatedInput.__gvCodexContext.threadID, "thread-session")
+    assert.equal(output.hookSpecificOutput.updatedInput.__gvCodexContext.toolUseID, "tool-use-3")
   } finally {
     rmSync(pluginData, { recursive: true, force: true })
   }

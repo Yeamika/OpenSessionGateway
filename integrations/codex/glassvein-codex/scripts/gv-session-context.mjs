@@ -1,34 +1,30 @@
-import { promises as fs } from "node:fs"
 import path from "node:path"
-
-import { resolveCodexSessionBinding } from "./gv-codex-state-store.mjs"
 
 const DEFAULT_RUNTIME_ID = "codex"
 
-export async function readCaller() {
-  const codexThread = text(process.env.CODEX_THREAD_ID)
-  const explicitSession = text(process.env.GV_CODEX_SESSION_ID || process.env.ExecutorSessionID || process.env.CODEX_SESSION_ID)
-  const explicitRuntime = text(process.env.GV_CODEX_RUNTIME_ID || process.env.ExecutorRuntimeID)
-  const explicitThread = text(process.env.GV_CODEX_THREAD_ID || codexThread)
-  const explicitCwd = text(process.env.GV_CODEX_CWD)
-  const binding = await resolveCodexSessionBinding({ sessionID: explicitSession, threadID: explicitThread })
-  if (explicitSession) {
+export async function readCaller(context = null) {
+  const direct = directContext(context)
+  if (direct.sessionID || direct.threadID) {
+    const threadID = direct.threadID || direct.sessionID
+    const sessionID = direct.sessionID || threadID
     return {
-      sessionID: explicitSession,
-      runtimeID: explicitRuntime || binding?.runtimeID || DEFAULT_RUNTIME_ID,
-      threadID: explicitThread || binding?.threadID,
-      cwd: explicitCwd || binding?.cwd,
+      sessionID,
+      threadID,
+      rootSessionID: direct.rootSessionID || sessionID,
+      turnID: direct.turnID,
+      toolUseID: direct.toolUseID,
+      runtimeID: direct.runtimeID || cwdRuntime(direct.cwd),
+      cwd: direct.cwd,
     }
   }
 
-  const stateDir = process.env.GV_CODEX_STATE_DIR || pluginDataPath("state")
-  const latest = stateDir ? await readLatestState(stateDir) : null
-  const threadID = explicitThread || binding?.threadID || text(latest?.threadID)
+  const explicitRuntime = text(process.env.GV_CODEX_RUNTIME_ID || process.env.ExecutorRuntimeID)
+  const explicitCwd = text(process.env.GV_CODEX_CWD)
   return {
-    sessionID: binding?.sessionID || text(latest?.sessionID) || threadID,
-    threadID,
-    runtimeID: explicitRuntime || binding?.runtimeID || text(process.env.GV_CODEX_RUNTIME) || cwdRuntime(binding?.cwd || latest?.cwd),
-    cwd: explicitCwd || binding?.cwd || text(latest?.cwd),
+    sessionID: "",
+    threadID: "",
+    runtimeID: explicitRuntime || text(process.env.GV_CODEX_RUNTIME) || DEFAULT_RUNTIME_ID,
+    cwd: explicitCwd,
   }
 }
 
@@ -37,9 +33,15 @@ export function injectedArgs(caller, names) {
     ExecutorRuntimeID: caller.runtimeID,
     ExecutorSessionID: caller.sessionID,
     ExecutorThreadID: caller.threadID,
+    ExecutorRootSessionID: caller.rootSessionID,
+    ExecutorTurnID: caller.turnID,
+    ExecutorToolUseID: caller.toolUseID,
     runtimeID: caller.runtimeID,
     sessionID: caller.sessionID,
     threadID: caller.threadID,
+    rootSessionID: caller.rootSessionID,
+    turnID: caller.turnID,
+    toolUseID: caller.toolUseID,
     cwd: caller.cwd,
   }
   return Object.fromEntries(
@@ -49,41 +51,17 @@ export function injectedArgs(caller, names) {
   )
 }
 
-async function readLatestState(stateDir) {
-  try {
-    const entries = await fs.readdir(stateDir, { withFileTypes: true })
-    const files = await Promise.all(entries
-      .filter((entry) => entry.isFile() && entry.name.endsWith(".jsonl"))
-      .map(async (entry) => {
-        const file = path.join(stateDir, entry.name)
-        const stat = await fs.stat(file)
-        return { file, mtimeMs: stat.mtimeMs }
-      }))
-    files.sort((a, b) => b.mtimeMs - a.mtimeMs)
-    for (const item of files) {
-      const state = parseLastJsonLine(await fs.readFile(item.file, "utf8"))
-      if (state?.sessionID) return state
-    }
-  } catch {}
-  return null
-}
-
-function parseLastJsonLine(content) {
-  const lines = content.trim().split("\n").filter(Boolean)
-  for (let index = lines.length - 1; index >= 0; index -= 1) {
-    try {
-      return JSON.parse(lines[index])
-    } catch {}
+function directContext(context) {
+  const value = context && typeof context === "object" && !Array.isArray(context) ? context : {}
+  return {
+    sessionID: text(value.sessionID || value.session_id),
+    threadID: text(value.threadID || value.thread_id || value.agentID || value.agent_id),
+    rootSessionID: text(value.rootSessionID || value.root_session_id),
+    turnID: text(value.turnID || value.turn_id),
+    toolUseID: text(value.toolUseID || value.tool_use_id),
+    runtimeID: text(value.runtimeID || value.runtime_id),
+    cwd: text(value.cwd),
   }
-  return null
-}
-
-function pluginDataPath(...segments) {
-  const root = process.env.GV_CODEX_STATE_ROOT
-    || process.env.PLUGIN_DATA
-    || process.env.CODEX_PLUGIN_DATA
-    || process.env.CLAUDE_PLUGIN_DATA
-  return root ? path.join(root, ...segments) : ""
 }
 
 function cwdRuntime(cwd) {

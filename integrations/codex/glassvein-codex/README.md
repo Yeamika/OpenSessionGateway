@@ -4,7 +4,7 @@ Codex-side GlassVein bridge. It lives beside the opencode integration and provid
 
 ## What It Does
 
-- Captures Codex `UserPromptSubmit` and `Stop` lifecycle state into plugin data as JSONL.
+- Captures Codex `UserPromptSubmit`, `PreToolUse`, and `Stop` lifecycle state into plugin data as JSONL or direct MCP call context.
 - Injects bounded GlassVein metadata through `UserPromptSubmit.additionalContext`.
 - Optionally publishes `session_update` upload envelopes to a local GlassVein router.
 - Provides a reusable MCP hub script that can back separate Codex MCP servers such as `refs` and `timer` while injecting Codex session ownership fields.
@@ -18,6 +18,7 @@ integrations/codex/glassvein-codex/
   .codex-plugin/plugin.json
   .mcp.json
   hooks/hooks.json
+  hooks/pre-tool-use.mjs
   hooks/user-prompt-submit.mjs
   hooks/stop.mjs
   gv-mcp.registry.example.json
@@ -51,7 +52,6 @@ Environment variables:
 - `GV_MCP_REGISTRY_FILE=/path/to/gv-mcp.registry.json` loads a shared backend MCP server list for one hub process.
 - `GV_MCP_SERVER_NAME=<server-name>` filters the shared MCP registry to one backend, so Codex can show separate MCP servers such as `refs` and `timer` while both use the same hub script.
 - `GV_CODEX_APP_SERVER_URL=ws://127.0.0.1:4510` enables GV `control/add_prompt` delivery as Codex app-server `turn/start` on an existing thread.
-- `GV_CODEX_THREAD_ID=<thread-id>` explicitly binds the adapter to an existing Codex app-server thread.
 - `GV_CODEX_THREAD_MAP_FILE=/path/to/app-server-threads.json` points to a JSON map from Codex `sessionID` to existing app-server `threadId`.
 - `GV_CODEX_RECEIVE_ROUTER=0` disables the adapter's GV router receive loop.
 
@@ -83,7 +83,11 @@ Prompt text is not included in injected context. Local capture stores a preview 
 
 ## Codex State Binding
 
-The plugin stores GV ownership binding inside Codex's SQLite state database, but only in GV-owned tables. Hook payload is the primary source: `UserPromptSubmit` and `Stop` record `input.thread_id || input.session_id` as the Codex thread binding and write `gv_session_bindings`. The MCP hub can also read Codex's `threads` table to resolve a bound thread, and if Codex does not pass a thread id to an MCP subprocess, the hub infers the likely thread from the parent Codex process and the `threads` table. It does not update Codex-owned tables such as `threads`, `thread_dynamic_tools`, or `thread_goals`.
+The plugin stores GV ownership binding inside Codex's SQLite state database, but only in GV-owned tables. Command hook payload is the primary source: `UserPromptSubmit` and `Stop` record `input.thread_id || input.session_id` as the Codex binding and write `gv_session_bindings`.
+
+For MCP tool calls, the reliable path is the `PreToolUse` hook. Codex command hooks expose `session_id`, `turn_id`, `tool_use_id`, and, for subagents, `agent_id`. The GV `PreToolUse` hook attaches those values to GV MCP arguments as `__gvCodexContext`; the hub removes that private field before forwarding to the backend and uses it to inject fields such as `ExecutorSessionID`, `ExecutorThreadID`, `ExecutorTurnID`, and `ExecutorToolUseID`. The hook only updates MCP tools whose Codex MCP server config points at `gv-mcp-hub.mjs`, so unrelated MCP servers are left unchanged.
+
+The hub does not infer the current caller by scanning Codex's `threads` table, by reading GV binding rows, or by using session environment variables. Without direct hook context, MCP ownership is treated as missing. The plugin does not update Codex-owned tables such as `threads`, `thread_dynamic_tools`, or `thread_goals`.
 
 The database path is resolved from `sqlite_home` in Codex config, then `CODEX_SQLITE_HOME`, then `CODEX_HOME`, and finally `~/.codex`. The latest `state_*.sqlite` file is used. Set `GV_CODEX_STATE_DB` to force an exact database path for tests or local debugging.
 

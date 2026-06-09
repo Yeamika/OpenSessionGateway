@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto"
 import { promises as fs } from "node:fs"
+import os from "node:os"
 import path from "node:path"
 
 import { recordCodexSessionBinding } from "./gv-codex-state-store.mjs"
@@ -46,6 +47,131 @@ export async function handleStop() {
   })
 }
 
+export async function handlePreToolUse() {
+  const input = await readJsonInput()
+  const toolInput = objectValue(input.tool_input)
+  if (!toolInput || !await shouldAttachPreToolContext(input)) {
+    writeJson({
+      continue: true,
+      suppressOutput: true,
+      hookSpecificOutput: {
+        hookEventName: "PreToolUse",
+        permissionDecision: "allow",
+      },
+    })
+    return
+  }
+
+  const codexSessionID = text(input.session_id)
+  const codexThreadID = text(input.agent_id) || codexSessionID
+  const context = pruneEmpty({
+    version: 1,
+    sessionID: codexThreadID,
+    threadID: codexThreadID,
+    rootSessionID: codexSessionID,
+    turnID: text(input.turn_id),
+    toolUseID: text(input.tool_use_id),
+    cwd: text(input.cwd),
+    model: text(input.model),
+    permissionMode: text(input.permission_mode),
+    agentID: text(input.agent_id),
+    agentType: text(input.agent_type),
+  })
+
+  writeJson({
+    continue: true,
+    suppressOutput: true,
+    hookSpecificOutput: {
+      hookEventName: "PreToolUse",
+      permissionDecision: "allow",
+      updatedInput: {
+        ...toolInput,
+        __gvCodexContext: context,
+      },
+    },
+  })
+}
+
+async function shouldAttachPreToolContext(input) {
+  const serverName = mcpServerNameFromToolName(text(input.tool_name))
+  if (!serverName) return false
+  const serverNames = await gvMcpServerNames()
+  return serverNames.has(serverName)
+}
+
+function mcpServerNameFromToolName(toolName) {
+  const prefixed = /^mcp__(.+?)__/.exec(toolName)
+  if (prefixed) return prefixed[1]
+  const slash = /^([^/\s]+)\//.exec(toolName)
+  if (slash) return slash[1]
+  const dotted = /^([^.:\s]+)\./.exec(toolName)
+  if (dotted) return dotted[1]
+  return ""
+}
+
+async function gvMcpServerNames() {
+  const configured = text(process.env.GV_CODEX_ATTACH_MCP_SERVERS)
+  if (configured) {
+    return new Set(configured.split(/[,:;\s]+/).map((item) => item.trim()).filter(Boolean))
+  }
+
+  const names = new Set()
+  for (const file of codexConfigFiles()) {
+    try {
+      for (const name of parseGvMcpServerNames(await fs.readFile(file, "utf8"))) {
+        names.add(name)
+      }
+    } catch {}
+  }
+  return names
+}
+
+function parseGvMcpServerNames(content) {
+  const names = []
+  let currentName = ""
+  let currentLines = []
+  const flush = () => {
+    if (currentName && currentLines.join("\n").includes("gv-mcp-hub.mjs")) {
+      names.push(currentName)
+    }
+  }
+
+  for (const rawLine of content.split("\n")) {
+    const line = rawLine.trim()
+    const match = /^\[mcp_servers\.((?:"[^"]+")|(?:[A-Za-z0-9_-]+))\]$/.exec(line)
+    if (match) {
+      flush()
+      currentName = unquoteTomlKey(match[1])
+      currentLines = []
+      continue
+    }
+    if (/^\[/.test(line)) {
+      flush()
+      currentName = ""
+      currentLines = []
+      continue
+    }
+    if (currentName) currentLines.push(rawLine)
+  }
+  flush()
+  return names
+}
+
+function unquoteTomlKey(value) {
+  return value.startsWith("\"") && value.endsWith("\"") ? value.slice(1, -1) : value
+}
+
+function codexConfigFiles() {
+  return [
+    path.join(codexHome(), "config.toml"),
+    path.join(process.cwd(), ".codex", "config.toml"),
+  ]
+}
+
+function codexHome() {
+  return path.resolve(text(process.env.CODEX_HOME) || path.join(os.homedir(), ".codex"))
+}
+
 async function readJsonInput() {
   const raw = await readStdin()
   try {
@@ -68,6 +194,10 @@ function readStdin() {
 
 function writeJson(value) {
   process.stdout.write(`${JSON.stringify(value)}\n`)
+}
+
+function objectValue(value) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : null
 }
 
 function buildState(input, event) {

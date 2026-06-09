@@ -1,27 +1,37 @@
 const DEFAULT_ROUTER_URL = "ws://127.0.0.1:7200"
 const DEFAULT_RUNTIME_ID = "codex"
 const DEFAULT_DOMAIN = "domain-a"
+const receiverSessions = new Set()
 
 export async function startGvReceiver(readCaller) {
   if (!boolEnv("GV_CODEX_RECEIVE_ROUTER", true)) return
   if (!appServerUrl()) return
 
-  const WebSocketImpl = await loadWebSocket()
-  if (!WebSocketImpl) throw new Error("WebSocket is not available")
-
   while (true) {
     try {
       const caller = await readCaller()
-      if (!caller.sessionID) {
-        await sleep(1000)
-        continue
-      }
-      await runGvReceiver(WebSocketImpl, caller)
+      if (caller.sessionID) ensureReceiverForCaller(caller)
+      await sleep(1000)
     } catch (error) {
       console.error(`[gv-timer] receiver reconnecting: ${errorMessage(error)}`)
       await sleep(1000)
     }
   }
+}
+
+export function ensureReceiverForCaller(caller) {
+  if (!boolEnv("GV_CODEX_RECEIVE_ROUTER", true)) return { status: "disabled" }
+  if (!appServerUrl()) return { status: "no_app_server" }
+  if (!text(caller?.sessionID)) return { status: "missing_session" }
+
+  const key = `${caller.runtimeID || DEFAULT_RUNTIME_ID}:${caller.sessionID}`
+  if (receiverSessions.has(key)) return { status: "running" }
+  receiverSessions.add(key)
+  runManagedGvReceiver(caller, key).catch((error) => {
+    receiverSessions.delete(key)
+    console.error(`[gv-timer] receiver stopped: ${errorMessage(error)}`)
+  })
+  return { status: "started" }
 }
 
 export async function ensureRouteForCaller(caller) {
@@ -46,6 +56,20 @@ export async function ensureRouteForCaller(caller) {
     })
     once(ws, "error", done)
   })
+}
+
+async function runManagedGvReceiver(caller, key) {
+  const WebSocketImpl = await loadWebSocket()
+  if (!WebSocketImpl) throw new Error("WebSocket is not available")
+
+  while (receiverSessions.has(key)) {
+    try {
+      await runGvReceiver(WebSocketImpl, caller)
+    } catch (error) {
+      console.error(`[gv-timer] receiver reconnecting: ${errorMessage(error)}`)
+      await sleep(1000)
+    }
+  }
 }
 
 async function runGvReceiver(WebSocketImpl, caller) {

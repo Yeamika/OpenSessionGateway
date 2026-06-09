@@ -130,7 +130,6 @@ test("GV MCP hub loads registry and injects Codex session fields", async () => {
   try {
     const port = server.address().port
     const registryFile = path.join(temp, "registry.json")
-    const pluginData = path.join(temp, "plugin-data")
     writeFileSync(registryFile, JSON.stringify({
       servers: {
         demo: {
@@ -161,16 +160,25 @@ test("GV MCP hub loads registry and injects Codex session fields", async () => {
         jsonrpc: "2.0",
         id: 2,
         method: "tools/call",
-        params: { name: "demo.ping", arguments: { message: "hello" } },
+        params: {
+          name: "demo.ping",
+          arguments: {
+            message: "hello",
+            __gvCodexContext: {
+              sessionID: "thread-1",
+              threadID: "thread-1",
+              rootSessionID: "root-thread-1",
+              runtimeID: "runtime-1",
+              cwd: pluginRoot,
+              turnID: "turn-1",
+              toolUseID: "tool-use-1",
+            },
+          },
+        },
       },
     ], {
       GV_CODEX_RECEIVE_ROUTER: "0",
       GV_MCP_REGISTRY_FILE: registryFile,
-      PLUGIN_DATA: pluginData,
-      GV_CODEX_SESSION_ID: "session-1",
-      GV_CODEX_RUNTIME_ID: "runtime-1",
-      GV_CODEX_THREAD_ID: "thread-1",
-      GV_CODEX_CWD: pluginRoot,
     })
 
     assert.equal(result.status, 0, result.stderr)
@@ -181,7 +189,7 @@ test("GV MCP hub loads registry and injects Codex session fields", async () => {
     assert.deepEqual(seen[0].body.params.arguments, {
       message: "hello",
       ExecutorRuntimeID: "runtime-1",
-      ExecutorSessionID: "session-1",
+      ExecutorSessionID: "thread-1",
       threadID: "thread-1",
       cwd: pluginRoot,
     })
@@ -191,7 +199,7 @@ test("GV MCP hub loads registry and injects Codex session fields", async () => {
   }
 })
 
-test("GV MCP hub uses Codex thread env as ownership fallback", async () => {
+test("GV MCP hub ignores Codex thread env without a captured binding", async () => {
   const temp = mkdtempSync(path.join(tmpdir(), "gv-mcp-hub-"))
   const seen = []
   const server = createServer((req, res) => {
@@ -240,23 +248,24 @@ test("GV MCP hub uses Codex thread env as ownership fallback", async () => {
     ], {
       GV_CODEX_RECEIVE_ROUTER: "0",
       GV_MCP_REGISTRY_FILE: registryFile,
+      GV_CODEX_STATE_DB: path.join(temp, "missing-state.sqlite"),
+      PLUGIN_DATA: path.join(temp, "missing-plugin-data"),
       CODEX_THREAD_ID: "thread-env-1",
       GV_CODEX_SESSION_ID: "",
       ExecutorSessionID: "",
     })
 
     assert.equal(result.status, 0, result.stderr)
-    assert.deepEqual(seen[0].params.arguments, {
-      ExecutorSessionID: "thread-env-1",
-      threadID: "thread-env-1",
-    })
+    const lines = result.stdout.trim().split("\n").map((line) => JSON.parse(line))
+    assert.match(lines[0].error.message, /No GV Codex tool context was attached/)
+    assert.equal(seen.length, 0)
   } finally {
     server.close()
     rmSync(temp, { recursive: true, force: true })
   }
 })
 
-test("GV MCP hub resolves ownership from Codex state binding", async () => {
+test("GV MCP hub does not resolve ownership from env or GV state binding", async () => {
   const temp = mkdtempSync(path.join(tmpdir(), "gv-mcp-hub-"))
   const seen = []
   const server = createServer((req, res) => {
@@ -284,7 +293,8 @@ test("GV MCP hub resolves ownership from Codex state binding", async () => {
       threadID: "thread-db-1",
       sessionID: "session-db-1",
       runtimeID: "runtime-db-1",
-      cwd: "/workspace/db-cwd",
+      cwd: pluginRoot,
+      source: "cli",
     })
     writeFileSync(registryFile, JSON.stringify({
       servers: {
@@ -313,25 +323,23 @@ test("GV MCP hub resolves ownership from Codex state binding", async () => {
       GV_CODEX_RECEIVE_ROUTER: "0",
       GV_MCP_REGISTRY_FILE: registryFile,
       GV_CODEX_STATE_DB: stateDb,
-      CODEX_THREAD_ID: "thread-db-1",
-      GV_CODEX_SESSION_ID: "",
-      ExecutorSessionID: "",
+      CODEX_THREAD_ID: "wrong-env-thread",
+      GV_CODEX_SESSION_ID: "session-db-1",
+      CODEX_SESSION_ID: "session-db-1",
+      ExecutorSessionID: "session-db-1",
     })
 
     assert.equal(result.status, 0, result.stderr)
-    assert.deepEqual(seen[0].params.arguments, {
-      ExecutorRuntimeID: "runtime-db-1",
-      ExecutorSessionID: "session-db-1",
-      threadID: "thread-db-1",
-      cwd: "/workspace/db-cwd",
-    })
+    const lines = result.stdout.trim().split("\n").map((line) => JSON.parse(line))
+    assert.match(lines[0].error.message, /No GV Codex tool context was attached/)
+    assert.equal(seen.length, 0)
   } finally {
     server.close()
     rmSync(temp, { recursive: true, force: true })
   }
 })
 
-test("GV MCP hub infers ownership from Codex thread state", async () => {
+test("GV MCP hub does not infer ownership from Codex thread state", async () => {
   const temp = mkdtempSync(path.join(tmpdir(), "gv-mcp-hub-"))
   const seen = []
   const server = createServer((req, res) => {
@@ -388,17 +396,14 @@ test("GV MCP hub infers ownership from Codex thread state", async () => {
       GV_MCP_REGISTRY_FILE: registryFile,
       GV_CODEX_STATE_DB: stateDb,
       GV_CODEX_SESSION_ID: "",
-      GV_CODEX_THREAD_ID: "",
-      CODEX_THREAD_ID: "",
+      CODEX_THREAD_ID: "wrong-env-thread",
       ExecutorSessionID: "",
     })
 
     assert.equal(result.status, 0, result.stderr)
-    assert.deepEqual(seen[0].params.arguments, {
-      ExecutorSessionID: "thread-state-1",
-      threadID: "thread-state-1",
-      cwd: pluginRoot,
-    })
+    const lines = result.stdout.trim().split("\n").map((line) => JSON.parse(line))
+    assert.match(lines[0].error.message, /No GV Codex tool context was attached/)
+    assert.equal(seen.length, 0)
   } finally {
     server.close()
     rmSync(temp, { recursive: true, force: true })
@@ -479,11 +484,12 @@ async function writeBindingDb(dbPath, binding) {
         session_id,
         runtime_id,
         cwd,
+        source,
         created_at_ms,
         updated_at_ms
       )
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run(binding.threadID, binding.sessionID, binding.runtimeID, binding.cwd, 1, 1)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(binding.threadID, binding.sessionID, binding.runtimeID, binding.cwd, binding.source || null, 1, 1)
   } finally {
     db.close()
   }
