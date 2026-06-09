@@ -1,6 +1,8 @@
 import { promises as fs } from "node:fs"
 import path from "node:path"
 
+import { resolveCodexSessionBinding } from "./gv-codex-state-store.mjs"
+
 const DEFAULT_RUNTIME_ID = "codex"
 
 export async function readCaller() {
@@ -9,23 +11,24 @@ export async function readCaller() {
   const explicitRuntime = text(process.env.GV_CODEX_RUNTIME_ID || process.env.ExecutorRuntimeID)
   const explicitThread = text(process.env.GV_CODEX_THREAD_ID || codexThread)
   const explicitCwd = text(process.env.GV_CODEX_CWD)
+  const binding = await resolveCodexSessionBinding({ sessionID: explicitSession, threadID: explicitThread })
   if (explicitSession) {
     return {
       sessionID: explicitSession,
-      runtimeID: explicitRuntime || DEFAULT_RUNTIME_ID,
-      threadID: explicitThread,
-      cwd: explicitCwd,
+      runtimeID: explicitRuntime || binding?.runtimeID || DEFAULT_RUNTIME_ID,
+      threadID: explicitThread || binding?.threadID,
+      cwd: explicitCwd || binding?.cwd,
     }
   }
 
   const stateDir = process.env.GV_CODEX_STATE_DIR || pluginDataPath("state")
   const latest = stateDir ? await readLatestState(stateDir) : null
-  const threadID = explicitThread || text(latest?.threadID)
+  const threadID = explicitThread || binding?.threadID || text(latest?.threadID)
   return {
-    sessionID: text(latest?.sessionID) || threadID,
+    sessionID: binding?.sessionID || text(latest?.sessionID) || threadID,
     threadID,
-    runtimeID: explicitRuntime || text(process.env.GV_CODEX_RUNTIME) || cwdRuntime(latest?.cwd),
-    cwd: explicitCwd || text(latest?.cwd),
+    runtimeID: explicitRuntime || binding?.runtimeID || text(process.env.GV_CODEX_RUNTIME) || cwdRuntime(binding?.cwd || latest?.cwd),
+    cwd: explicitCwd || binding?.cwd || text(latest?.cwd),
   }
 }
 

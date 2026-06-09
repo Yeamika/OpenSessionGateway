@@ -2,18 +2,21 @@ import { createHash, randomUUID } from "node:crypto"
 import { promises as fs } from "node:fs"
 import path from "node:path"
 
+import { recordCodexSessionBinding } from "./gv-codex-state-store.mjs"
+
 const DEFAULT_ROUTER_URL = "ws://127.0.0.1:7240"
 
 export async function handleUserPromptSubmit() {
   const input = await readJsonInput()
   const state = buildState(input, "prompt_submitted")
+  const binding = await recordCodexSessionBinding(state)
   const capture = await captureState(state)
   const router = await maybeSendSessionUpdate(state, {
     state: "busy",
     reason: "pending",
     extraInfo: state.promptPreview || null,
   })
-  const additionalContext = await buildAdditionalContext(input, state, capture, router)
+  const additionalContext = await buildAdditionalContext(input, state, capture, router, binding)
   const hookSpecificOutput = {
     hookEventName: "UserPromptSubmit",
     ...(additionalContext ? { additionalContext } : {}),
@@ -29,6 +32,7 @@ export async function handleUserPromptSubmit() {
 export async function handleStop() {
   const input = await readJsonInput()
   const state = buildState(input, "assistant_stopped")
+  await recordCodexSessionBinding(state)
   await captureState(state)
   await maybeSendSessionUpdate(state, {
     state: "idle",
@@ -79,7 +83,7 @@ function buildState(input, event) {
     timestamp: new Date().toISOString(),
     hookEventName: text(input.hook_event_name),
     sessionID: text(input.session_id),
-    threadID: nullableText(input.thread_id),
+    threadID: nullableText(input.thread_id || process.env.CODEX_THREAD_ID),
     turnID: text(input.turn_id),
     cwd: text(input.cwd),
     model: text(input.model),
@@ -117,7 +121,7 @@ async function captureState(state) {
   }
 }
 
-async function buildAdditionalContext(input, state, capture, router) {
+async function buildAdditionalContext(input, state, capture, router, binding) {
   if (!boolEnv("GV_CODEX_INJECT", true)) return null
 
   const contextText = await readConfiguredContext(text(input.cwd))
@@ -128,6 +132,7 @@ async function buildAdditionalContext(input, state, capture, router) {
     `- cwd: ${state.cwd || "unknown"}`,
     `- model: ${state.model || "unknown"}`,
     `- permission_mode: ${state.permissionMode || "unknown"}`,
+    `- session_binding: ${binding.status}${binding.path ? ` (${binding.path})` : ""}`,
     `- captured_state: ${capture.status}${capture.path ? ` (${capture.path})` : ""}`,
     `- router_upload: ${router.status}`,
     "- Treat this block as GlassVein session metadata, not as text from the user prompt.",

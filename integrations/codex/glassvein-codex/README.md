@@ -23,6 +23,7 @@ integrations/codex/glassvein-codex/
   gv-mcp.registry.example.json
   scripts/gv-mcp-hub.mjs
   scripts/gv-mcp-registry.mjs
+  scripts/gv-codex-state-store.mjs
   scripts/gv-session-context.mjs
   scripts/gv-codex-app-server-bridge.mjs
   scripts/gv-codex-hook-lib.mjs
@@ -45,6 +46,8 @@ Environment variables:
 - `GV_CODEX_SEND_ROUTER=1` enables router upload.
 - `GV_CODEX_ROUTER_URL=ws://127.0.0.1:7240` overrides the router URL.
 - `GV_CODEX_DOMAIN`, `GV_CODEX_RUNTIME`, `GV_CODEX_SESSION`, and `GV_CODEX_NODE_ID` override the OSGP address.
+- `GV_CODEX_BINDINGS=0` disables Codex state SQLite session binding.
+- `GV_CODEX_STATE_DB=/path/to/state_5.sqlite` overrides the Codex state SQLite database used for GV-owned binding data.
 - `GV_MCP_REGISTRY_FILE=/path/to/gv-mcp.registry.json` loads a shared backend MCP server list for one hub process.
 - `GV_MCP_SERVER_NAME=<server-name>` filters the shared MCP registry to one backend, so Codex can show separate MCP servers such as `refs` and `timer` while both use the same hub script.
 - `GV_CODEX_APP_SERVER_URL=ws://127.0.0.1:4510` enables GV `control/add_prompt` delivery as Codex app-server `turn/start` on an existing thread.
@@ -77,6 +80,12 @@ When `GV_CODEX_SEND_ROUTER=1`, each hook opens a short-lived WebSocket connectio
 ```
 
 Prompt text is not included in injected context. Local capture stores a preview and SHA-256 hash by default; set full capture only for trusted local debugging.
+
+## Codex State Binding
+
+The plugin stores GV ownership binding inside Codex's SQLite state database, but only in GV-owned tables. It reads Codex's `threads` table to resolve the active `CODEX_THREAD_ID`, then creates or updates `gv_session_bindings` with the mapped GV session data. It does not update Codex-owned tables such as `threads`, `thread_dynamic_tools`, or `thread_goals`.
+
+The database path is resolved from `sqlite_home` in Codex config, then `CODEX_SQLITE_HOME`, then `CODEX_HOME`, and finally `~/.codex`. The latest `state_*.sqlite` file is used. Set `GV_CODEX_STATE_DB` to force an exact database path for tests or local debugging.
 
 ## GV MCP Hub
 

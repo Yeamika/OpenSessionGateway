@@ -8,9 +8,10 @@ import test from "node:test"
 
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
 
-test("UserPromptSubmit captures state and injects bounded context", () => {
+test("UserPromptSubmit captures state, records binding, and injects bounded context", async () => {
   const pluginData = mkdtempSync(path.join(tmpdir(), "gv-codex-plugin-"))
   try {
+    const stateDb = path.join(pluginData, "state_5.sqlite")
     const input = {
       hook_event_name: "UserPromptSubmit",
       session_id: "session/one",
@@ -24,8 +25,10 @@ test("UserPromptSubmit captures state and injects bounded context", () => {
 
     const result = runHook("hooks/user-prompt-submit.mjs", input, {
       PLUGIN_DATA: pluginData,
+      GV_CODEX_STATE_DB: stateDb,
       GV_CODEX_SEND_ROUTER: "0",
       GV_CODEX_CONTEXT_INLINE: "repo hint",
+      CODEX_THREAD_ID: "thread-one",
     })
 
     assert.equal(result.status, 0, result.stderr)
@@ -34,6 +37,7 @@ test("UserPromptSubmit captures state and injects bounded context", () => {
     assert.equal(output.hookSpecificOutput.hookEventName, "UserPromptSubmit")
     assert.match(output.hookSpecificOutput.additionalContext, /GlassVein Codex context/)
     assert.match(output.hookSpecificOutput.additionalContext, /repo hint/)
+    assert.match(output.hookSpecificOutput.additionalContext, /session_binding: written/)
     assert.doesNotMatch(output.hookSpecificOutput.additionalContext, /secret-value/)
 
     const stateFile = path.join(pluginData, "state", "session_one.jsonl")
@@ -44,6 +48,10 @@ test("UserPromptSubmit captures state and injects bounded context", () => {
     assert.equal(state.promptLength, 30)
     assert.match(state.promptSha256, /^[a-f0-9]{64}$/)
     assert.equal(state.promptPreview, "please inspect gv secret-value")
+
+    const binding = await readBinding(stateDb, "thread-one")
+    assert.equal(binding.session_id, "session/one")
+    assert.equal(binding.thread_id, "thread-one")
   } finally {
     rmSync(pluginData, { recursive: true, force: true })
   }
@@ -66,7 +74,9 @@ test("Stop records completed session state", () => {
 
     const result = runHook("hooks/stop.mjs", input, {
       PLUGIN_DATA: pluginData,
+      GV_CODEX_STATE_DB: path.join(pluginData, "state_5.sqlite"),
       GV_CODEX_SEND_ROUTER: "0",
+      CODEX_THREAD_ID: "thread-one",
     })
 
     assert.equal(result.status, 0, result.stderr)
@@ -88,4 +98,14 @@ function runHook(relativeScript, input, env) {
     input: JSON.stringify(input),
     encoding: "utf8",
   })
+}
+
+async function readBinding(dbPath, threadID) {
+  const { DatabaseSync } = await import("node:sqlite")
+  const db = new DatabaseSync(dbPath)
+  try {
+    return db.prepare("SELECT thread_id, session_id FROM gv_session_bindings WHERE thread_id = ?").get(threadID)
+  } finally {
+    db.close()
+  }
 }
