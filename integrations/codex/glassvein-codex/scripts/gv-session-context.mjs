@@ -4,9 +4,10 @@ import path from "node:path"
 const DEFAULT_RUNTIME_ID = "codex"
 
 export async function readCaller() {
-  const explicitSession = text(process.env.GV_CODEX_SESSION_ID || process.env.ExecutorSessionID)
+  const codexThread = text(process.env.CODEX_THREAD_ID)
+  const explicitSession = text(process.env.GV_CODEX_SESSION_ID || process.env.ExecutorSessionID || process.env.CODEX_SESSION_ID)
   const explicitRuntime = text(process.env.GV_CODEX_RUNTIME_ID || process.env.ExecutorRuntimeID)
-  const explicitThread = text(process.env.GV_CODEX_THREAD_ID)
+  const explicitThread = text(process.env.GV_CODEX_THREAD_ID || codexThread)
   const explicitCwd = text(process.env.GV_CODEX_CWD)
   if (explicitSession) {
     return {
@@ -19,9 +20,10 @@ export async function readCaller() {
 
   const stateDir = process.env.GV_CODEX_STATE_DIR || pluginDataPath("state")
   const latest = stateDir ? await readLatestState(stateDir) : null
+  const threadID = explicitThread || text(latest?.threadID)
   return {
-    sessionID: text(latest?.sessionID),
-    threadID: explicitThread || text(latest?.threadID),
+    sessionID: text(latest?.sessionID) || threadID,
+    threadID,
     runtimeID: explicitRuntime || text(process.env.GV_CODEX_RUNTIME) || cwdRuntime(latest?.cwd),
     cwd: explicitCwd || text(latest?.cwd),
   }

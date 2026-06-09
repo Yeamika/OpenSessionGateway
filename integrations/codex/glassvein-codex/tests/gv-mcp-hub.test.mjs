@@ -191,6 +191,71 @@ test("GV MCP hub loads registry and injects Codex session fields", async () => {
   }
 })
 
+test("GV MCP hub uses Codex thread env as ownership fallback", async () => {
+  const temp = mkdtempSync(path.join(tmpdir(), "gv-mcp-hub-"))
+  const seen = []
+  const server = createServer((req, res) => {
+    let raw = ""
+    req.on("data", (chunk) => {
+      raw += chunk
+    })
+    req.on("end", () => {
+      seen.push(JSON.parse(raw))
+      res.setHeader("content-type", "application/json")
+      res.end(JSON.stringify({
+        jsonrpc: "2.0",
+        id: "server",
+        result: { content: [{ type: "text", text: "ok" }] },
+      }))
+    })
+  })
+
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve))
+  try {
+    const port = server.address().port
+    const registryFile = path.join(temp, "registry.json")
+    writeFileSync(registryFile, JSON.stringify({
+      servers: {
+        demo: {
+          type: "http-jsonrpc",
+          url: `http://127.0.0.1:${port}/mcp/demo`,
+          inject: ["ExecutorSessionID", "threadID"],
+          tools: {
+            ping: {
+              target: "Ping",
+              inputSchema: { type: "object", properties: {}, additionalProperties: false },
+            },
+          },
+        },
+      },
+    }), "utf8")
+
+    const result = await runHub([
+      {
+        jsonrpc: "2.0",
+        id: 1,
+        method: "tools/call",
+        params: { name: "demo.ping", arguments: {} },
+      },
+    ], {
+      GV_CODEX_RECEIVE_ROUTER: "0",
+      GV_MCP_REGISTRY_FILE: registryFile,
+      CODEX_THREAD_ID: "thread-env-1",
+      GV_CODEX_SESSION_ID: "",
+      ExecutorSessionID: "",
+    })
+
+    assert.equal(result.status, 0, result.stderr)
+    assert.deepEqual(seen[0].params.arguments, {
+      ExecutorSessionID: "thread-env-1",
+      threadID: "thread-env-1",
+    })
+  } finally {
+    server.close()
+    rmSync(temp, { recursive: true, force: true })
+  }
+})
+
 function runHub(messages, env) {
   return new Promise((resolve) => {
     const child = spawn("node", [path.join(pluginRoot, "scripts/gv-mcp-hub.mjs")], {
