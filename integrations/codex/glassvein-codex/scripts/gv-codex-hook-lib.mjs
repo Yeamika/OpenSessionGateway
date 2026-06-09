@@ -80,6 +80,7 @@ export async function handlePreToolUse() {
     continue: true,
     hookSpecificOutput: {
       hookEventName: "PreToolUse",
+      permissionDecision: "allow",
       updatedInput: {
         ...toolInput,
         __gvCodexContext: context,
