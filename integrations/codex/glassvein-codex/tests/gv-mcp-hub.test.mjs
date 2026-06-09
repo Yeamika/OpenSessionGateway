@@ -77,6 +77,81 @@ test("GV MCP hub selects one backend from a shared registry", async () => {
   }
 })
 
+test("GV MCP hub discovers HTTP JSON-RPC backend tools", async () => {
+  const temp = mkdtempSync(path.join(tmpdir(), "gv-mcp-hub-"))
+  const seen = []
+  const server = createServer((req, res) => {
+    let raw = ""
+    req.on("data", (chunk) => {
+      raw += chunk
+    })
+    req.on("end", () => {
+      const body = JSON.parse(raw)
+      seen.push(body)
+      res.setHeader("content-type", "application/json")
+      res.end(JSON.stringify({
+        jsonrpc: "2.0",
+        id: body.id,
+        result: {
+          tools: [{
+            name: "Ping",
+            description: "Ping discovered backend.",
+            inputSchema: {
+              type: "object",
+              properties: {
+                message: { type: "string" },
+                ExecutorSessionID: { type: "string" },
+              },
+              required: ["message", "ExecutorSessionID"],
+              additionalProperties: false,
+            },
+          }],
+        },
+      }))
+    })
+  })
+
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve))
+  try {
+    const registryFile = path.join(temp, "registry.json")
+    writeFileSync(registryFile, JSON.stringify({
+      servers: {
+        demo: {
+          type: "http-jsonrpc",
+          url: `http://127.0.0.1:${server.address().port}/mcp/demo`,
+          inject: ["ExecutorSessionID"],
+          exposePrefix: false,
+        },
+      },
+    }), "utf8")
+
+    const result = await runHub([
+      { jsonrpc: "2.0", id: 1, method: "tools/list", params: {} },
+    ], {
+      GV_CODEX_RECEIVE_ROUTER: "0",
+      GV_MCP_REGISTRY_FILE: registryFile,
+      GV_MCP_SERVER_NAME: "demo",
+    })
+
+    assert.equal(result.status, 0, result.stderr)
+    const lines = result.stdout.trim().split("\n").map((line) => JSON.parse(line))
+    assert.deepEqual(lines[0].result.tools, [{
+      name: "Ping",
+      description: "Ping discovered backend.",
+      inputSchema: {
+        type: "object",
+        properties: { message: { type: "string" } },
+        required: ["message"],
+        additionalProperties: false,
+      },
+    }])
+    assert.equal(seen[0].method, "tools/list")
+  } finally {
+    server.close()
+    rmSync(temp, { recursive: true, force: true })
+  }
+})
+
 test("GV MCP hub fails when selected backend is missing", async () => {
   const temp = mkdtempSync(path.join(tmpdir(), "gv-mcp-hub-"))
   try {

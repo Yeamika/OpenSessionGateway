@@ -101,7 +101,7 @@ The database path is resolved from `sqlite_home` in Codex config, then `CODEX_SQ
 
 ## GV MCP Hub
 
-The hub has no backend tools by default. Add tools with one JSON registry that lists backend MCP servers.
+The hub has no backend tools by default. Add backend MCP servers with one JSON registry. For each backend, the hub asks the backend MCP server for `tools/list`; GV does not need a duplicated list of every tool.
 
 One registry can contain multiple backends:
 
@@ -119,27 +119,13 @@ One registry can contain multiple backends:
       "url": "http://127.0.0.1:8789/mcp/timer_scheduler",
       "runtimeQueryParam": "runtimeID",
       "inject": ["ExecutorRuntimeID", "ExecutorSessionID"],
-      "exposePrefix": false,
-      "tools": {
-        "set_timer": {
-          "target": "CreateOneShotTimer",
-          "description": "Set a one-shot timer for this Codex session.",
-          "inputSchema": {
-            "type": "object",
-            "properties": {
-              "msg": { "type": "string" },
-              "afterSeconds": { "type": "integer" },
-              "title": { "type": "string" }
-            },
-            "required": ["msg", "afterSeconds"],
-            "additionalProperties": false
-          }
-        }
-      }
+      "exposePrefix": false
     }
   }
 }
 ```
+
+`tools` is optional and is only for explicit aliases, fallback definitions, or compatibility with a backend that cannot answer `tools/list`. Normal MCP backends should omit it and let the hub discover the tools from the backend.
 
 To keep Codex tools separated, register one Codex MCP entry per backend and point each entry at the same hub script and same registry file, with a different `GV_MCP_SERVER_NAME`.
 

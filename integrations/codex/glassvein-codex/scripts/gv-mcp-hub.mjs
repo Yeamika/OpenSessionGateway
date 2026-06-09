@@ -2,7 +2,7 @@
 import { createInterface } from "node:readline"
 
 import { ensureReceiverForCaller, ensureRouteForCaller } from "./gv-codex-app-server-bridge.mjs"
-import { callHttpJsonRpcTool, errorResponse, ok, textResult } from "./gv-mcp-jsonrpc.mjs"
+import { callHttpJsonRpcTool, errorResponse, listHttpJsonRpcTools, ok, textResult } from "./gv-mcp-jsonrpc.mjs"
 import { loadRegistry } from "./gv-mcp-registry.mjs"
 import { startStdioJsonRpcServer } from "./gv-mcp-stdio.mjs"
 import { injectedArgs, readCaller } from "./gv-session-context.mjs"
@@ -136,12 +136,25 @@ function exposedToolName(serverName, server, toolName, dedicatedServer) {
 }
 
 async function resolveServerTools(serverName, server, clients) {
-  if (server.type !== "stdio-jsonrpc") return server.tools || {}
+  if (server.type === "http-jsonrpc") return resolveHttpServerTools(serverName, server)
 
-  const client = await startStdioJsonRpcServer({ ...server, name: serverName })
-  clients.set(serverName, client)
-  const result = await client.request("tools/list", {})
-  const discovered = Object.fromEntries((result.tools || []).map((tool) => [
+  if (server.type === "stdio-jsonrpc") {
+    const client = await startStdioJsonRpcServer({ ...server, name: serverName })
+    clients.set(serverName, client)
+    const result = await client.request("tools/list", {})
+    return mergeDiscoveredTools(toolsFromListResult(result), server.tools)
+  }
+
+  return server.tools || {}
+}
+
+async function resolveHttpServerTools(serverName, server) {
+  if (hasConfiguredTools(server)) return server.tools
+  return listHttpJsonRpcTools({ ...server, name: serverName })
+}
+
+function toolsFromListResult(result) {
+  return Object.fromEntries((result.tools || []).map((tool) => [
     tool.name,
     {
       target: tool.name,
@@ -149,7 +162,14 @@ async function resolveServerTools(serverName, server, clients) {
       inputSchema: tool.inputSchema,
     },
   ]))
-  return { ...discovered, ...(server.tools || {}) }
+}
+
+function mergeDiscoveredTools(discovered, configured = {}) {
+  return { ...discovered, ...configured }
+}
+
+function hasConfiguredTools(server) {
+  return Object.keys(server.tools || {}).length > 0
 }
 
 function cleanInputSchema(schema, injectedNames) {

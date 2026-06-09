@@ -3,6 +3,7 @@ import path from "node:path"
 import { fileURLToPath } from "node:url"
 
 import { loadFullRegistry } from "./gv-mcp-registry.mjs"
+import { listHttpJsonRpcTools } from "./gv-mcp-jsonrpc.mjs"
 import { startStdioJsonRpcServer } from "./gv-mcp-stdio.mjs"
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url))
@@ -57,6 +58,11 @@ export async function handleDynamicToolCall(params, caller = {}) {
 }
 
 async function resolveServerTools(serverName, server) {
+  if (server.type === "http-jsonrpc") {
+    if (hasConfiguredTools(server)) return server.tools
+    return listHttpJsonRpcTools({ ...server, name: serverName })
+  }
+
   if (server.type !== "stdio-jsonrpc") return server.tools || {}
 
   const client = await startStdioJsonRpcServer({ ...server, name: serverName })
@@ -74,6 +80,10 @@ async function resolveServerTools(serverName, server) {
   } finally {
     client.close()
   }
+}
+
+function hasConfiguredTools(server) {
+  return Object.keys(server.tools || {}).length > 0
 }
 
 function selectedServerNames(allNames) {
